@@ -30,6 +30,9 @@ app.register_blueprint(
 def dashboard():
     return render_template("dashboard.html")
 
+@app.route("/loginuser")
+def loginuser():
+    return render_template("loginuser.html")
 
 print(app.url_map)
 
