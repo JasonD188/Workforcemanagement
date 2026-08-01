@@ -35,6 +35,12 @@ def dashboard():
 @app.route("/loginuser")
 def loginuser():
     return render_template("loginuser.html")
+@app.route("/registerface")
+def registerface():
+    return render_template("registerface.html")
+@app.route("/user_dashboard")
+def user_dashboard():
+    return render_template("user_dashboard.html")
 
 print(app.url_map)
 
