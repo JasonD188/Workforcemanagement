@@ -232,22 +232,24 @@ def login():
     employee_id = _clean_str(data.get("employee_id"))
     password = data.get("password") or ""
 
+    print(f"DEBUG: incoming employee_id={employee_id!r} (len={len(employee_id)})")
+
     if not employee_id or not password:
         return jsonify({"error": "QR ID and password are required."}), 400
 
     employee = employees_collection.find_one({"employee_id": employee_id})
+    print(f"DEBUG: employee found={employee is not None}")
+    if employee:
+        print(f"DEBUG: stored employee_id={employee.get('employee_id')!r}, has_hash={bool(employee.get('password_hash'))}")
 
     if not employee or not employee.get("password_hash"):
         return jsonify({"error": "Invalid QR ID or password."}), 401
 
-    if not check_password_hash(employee["password_hash"], password):
+    pw_ok = check_password_hash(employee["password_hash"], password)
+    print(f"DEBUG: password_match={pw_ok}")
+
+    if not pw_ok:
         return jsonify({"error": "Invalid QR ID or password."}), 401
-
-    session["employee_id"] = employee.get("employee_id")
-    session["email"] = employee.get("email")
-    session["role"] = employee.get("role", "employee")
-
-    return jsonify({"success": True, "employee": _public_employee(employee)})
 
 
 @api_bp.route("/api/verify-employee", methods=["POST"])
