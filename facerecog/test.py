@@ -41,6 +41,12 @@ def registerface():
 @app.route("/user_dashboard")
 def user_dashboard():
     return render_template("user_dashboard.html")
+@app.route("/deepfacerecog")
+def deepfacerecog():
+    return render_template("deepfacerecog.html")
+@app.route("/qrcodescanner")
+def qrcodescanner():
+    return render_template("qrcodescanner.html")
 
 print(app.url_map)
 
