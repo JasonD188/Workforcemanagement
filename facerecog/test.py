@@ -9,8 +9,7 @@ from registerface import registerface_bp
 from deepfacerecog import deepfacerecog_bp
 
 app = Flask(__name__)
-app.secret_key = os.environ["SECRET_KEY"]  
-
+app.secret_key = os.environ.get("SECRET_KEY", "temporary-dev-key-change-in-production")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 CORS(app, resources={r"/*": {"origins": "*"}})
