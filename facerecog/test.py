@@ -1,23 +1,37 @@
-from flask import Flask, render_template
+from flask import Flask, jsonify, render_template, request
+from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from qrscanner import qrcodescanner_bp
-from deepfacerecog import deepfacerecog_bp
+from api import api_bp
 from registerface import registerface_bp
+from deepfacerecog import deepfacerecog_bp
 
 app = Flask(__name__)
+
+
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
-app.register_blueprint(qrcodescanner_bp, url_prefix="/qrcodescanner")
-app.register_blueprint(deepfacerecog_bp, url_prefix="/deepfacerecog")
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+
+
+
 app.register_blueprint(registerface_bp, url_prefix="/registerface")
+app.register_blueprint(api_bp)
+
+# ITO ANG KULANG
+app.register_blueprint(
+    deepfacerecog_bp,
+    url_prefix="/deepfacerecog"
+)
+
 
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html")
 
-# I-print lahat ng registered routes
+
 print(app.url_map)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)

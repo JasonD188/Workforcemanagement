@@ -6,34 +6,8 @@ import numpy as np
 import qrcode
 import uuid
 from io import BytesIO
-from pymongo import MongoClient
-from gridfs import GridFS
-from dotenv import load_dotenv
 
-load_dotenv() 
-
-MONGO_URI = os.environ.get("MONGO_URI")
-
-if not MONGO_URI:
-    raise RuntimeError(
-        "MONGO_URI is not set. Create a .env file (see .env.example) "
-        "with your MongoDB Atlas connection string."
-    )
-
-client = MongoClient(MONGO_URI)
-
-try:
-    client.admin.command("ping")
-    print("MongoDB Atlas Connected!")
-except Exception as e:
-    print("MongoDB Connection Error:", e)
-
-db = client["employee_db"]
-
-
-employees_collection = db["employees"]
-
-fs = GridFS(db, collection="face_photos")
+from api import client, db, employees_collection, fs
 
 registerface_bp = Blueprint("registerface_bp", __name__)
 
@@ -76,9 +50,9 @@ def save_image_to_gridfs(data_url, filename, employee_id, name):
     Decode the base64 photo from the browser and store it directly in
     MongoDB GridFS (no local register/ folder anymore).
 
-    Any previously stored phsoto(s) for this employee_id are deleted first,
-    so there is always exactly ONE cusrrent registered photo per employee -
-    this is what re-registering the same person now overwritws.
+    Any previously stored photo(s) for this employee_id are deleted first,
+    so there is always exactly ONE current registered photo per employee -
+    this is what re-registering the same person now overwrites.
     """
     img_data = base64.b64decode(data_url.split(",")[1])
 
@@ -87,7 +61,7 @@ def save_image_to_gridfs(data_url, filename, employee_id, name):
     success, buffer = cv2.imencode(".jpg", img)
     jpeg_bytes = buffer.tobytes()
 
-  
+
     for old_file in fs.find({"employee_id": employee_id}):
         fs.delete(old_file._id)
 
@@ -103,7 +77,16 @@ def save_image_to_gridfs(data_url, filename, employee_id, name):
 
 
 def generate_qr_code(content, filename):
-    """Generate a QR code image encoding the given content and save it."""
+    """Generate a QR code image encoding the given content and save it.
+
+    FIX: idinagdag ang os.makedirs dito mismo (hindi lang sa module level
+    noong pag-import). Kung na-delete ang qrcodes/ folder habang tumatakbo
+    pa rin ang server (halimbawa dahil sa OneDrive sync, antivirus, o
+    manual na pagtanggal), ito ang nagre-recreate nito bago i-save ang
+    bagong QR - kaya hindi na uulit yung FileNotFoundError.
+    """
+
+    os.makedirs(QR_DIR, exist_ok=True)
 
     qr = qrcode.QRCode(
         version=1,
@@ -150,10 +133,10 @@ def register():
     filename = f"{employee_id}_{name}.jpg"
     qr_filename = f"{employee_id}_qr.png"
 
-   
+
     save_image_to_gridfs(image, filename, employee_id, name)
 
- 
+
     qr_content = request.url_root.rstrip("/") + f"/employee/{employee_id}"
 
     qr_path, qr_data_url = generate_qr_code(qr_content, qr_filename)
@@ -191,5 +174,3 @@ def get_employee(employee_id):
         "success": True,
         **employee
     })
-
-

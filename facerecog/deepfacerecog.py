@@ -6,38 +6,16 @@ import cv2
 import os
 import re
 from datetime import datetime
-from pymongo import MongoClient
-from gridfs import GridFS
-from dotenv import load_dotenv
-
-load_dotenv()  
-
-MONGO_URI = os.environ.get("MONGO_URI")
-
-if not MONGO_URI:
-    raise RuntimeError(
-        "MONGO_URI is not set. Create a .env file (see .env.example) "
-        "with your MongoDB Atlas connection string."
-    )
-
-client = MongoClient(MONGO_URI)
-
-try:
-    client.admin.command("ping")
-    print("MongoDB Atlas Connected!")
-except Exception as e:
-    print("MongoDB Connection Error:", e)
-
-db = client["employee_db"]
+from datetime import timezone, timedelta
 
 
-employees_collection = db["employees"]
-
-
-fs = GridFS(db, collection="face_photos")
-
-
-scans_collection = db["scan_logs"]
+from api import (
+    fs,
+    load_employees,
+    find_employee_by_name,
+    log_verified_scan,
+    fetch_recent_scans,
+)
 
 deepfacerecog_bp = Blueprint("deepfacerecog_bp", __name__)
 
@@ -46,30 +24,19 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 QR_DIR = os.path.join(BASE_DIR, "qrcodes")
 
 
-# --- Match / access threshold -------------------------------------------------
-# Score = (1 - face_distance) * 100. A face must score at least
-# MIN_ACCESS_SCORE_PERCENT to be considered "verified" / access granted.
-# Tune this between 60-65 as needed; TOLERANCE (the underlying distance
-# cutoff used by face_recognition) is derived from it automatically.
-MIN_ACCESS_SCORE_PERCENT = 54
-TOLERANCE = 1 - (MIN_ACCESS_SCORE_PERCENT / 100)  # 0.46 at 54%
+MIN_ACCESS_SCORE_PERCENT = 54 #verify ng percentage ng scan face
+TOLERANCE = 1 - (MIN_ACCESS_SCORE_PERCENT / 100)  
 MIN_MARGIN = 0.07
 
 REGISTER_NUM_JITTERS = 10
 SCAN_NUM_JITTERS = 5
 
-# "small" uses far less RAM/CPU than "large" - important on memory-limited
-# hosts like Railway, where the previous "large" model was causing the
-# gunicorn worker to be SIGKILL'd (out of memory) mid-request, which is
-# what produced the "undefined% Match" / undefined results in the UI.
+
 ENCODING_MODEL = "small"
 
 SMILE_GROWTH_THRESHOLD = 1.10
 
-# Frames darker than this (0-255 average brightness) get auto-enhanced
-# before face detection - see enhance_low_light(). Well-lit frames are
-# left untouched. Lower this number if legitimately dim rooms are still
-# being skipped; raise it if enhancement is kicking in on normal frames.
+
 LOW_LIGHT_BRIGHTNESS_THRESHOLD = 90
 
 
@@ -132,50 +99,10 @@ def eye_distance(landmarks):
     return ((rx - lx) ** 2 + (ry - ly) ** 2) ** 0.5
 
 
-def load_employees():
-    """Load all employee records from MongoDB Atlas, keyed by employee_id."""
-    employees = {}
-    for doc in employees_collection.find():
-        eid = doc.get("employee_id")
-        if not eid:
-            continue
-        employees[eid] = {
-            "name": doc.get("name", ""),
-            "contact": doc.get("contact", ""),
-            "address": doc.get("address", ""),
-            "date_hired": doc.get("date_hired", "")
-        }
-    return employees
-
-
 _startup_employees = load_employees()
 print(f"Loaded {len(_startup_employees)} employee record(s) from MongoDB Atlas")
 for _eid, _info in _startup_employees.items():
     print(f"  - id={_eid} name={_info.get('name')!r}")
-
-
-def find_employee_by_name(person_name):
-    employees = load_employees()
-
-    matches = [
-        (eid, info) for eid, info in employees.items()
-        if info.get("name", "").strip().lower() == person_name.strip().lower()
-    ]
-
-    if len(matches) > 1:
-        print(f"WARNING: {len(matches)} MongoDB employee records share the name "
-              f"{person_name!r}: {[m[0] for m in matches]}. "
-              f"Returning the first one - results may be inconsistent "
-              f"until duplicates are removed.")
-
-    if matches:
-        return matches[0]
-
-    available_names = [info.get("name") for info in employees.values()]
-    print(f"No MongoDB record found for face-match name {person_name!r}. "
-          f"Available employee names: {available_names}")
-
-    return None, None
 
 
 def get_qr_code_data_url(employee_id):
@@ -192,27 +119,6 @@ def get_qr_code_data_url(employee_id):
     return "data:image/png;base64," + base64.b64encode(qr_bytes).decode("utf-8")
 
 
-def log_verified_scan(employee_id, name, score, scanned_b64, registered_b64, scan_type=None):
-    verified_at = datetime.now()
-
-    try:
-        scans_collection.insert_one({
-            "employee_id": employee_id,
-            "name": name,
-            "score": score,
-            "scanned_image": scanned_b64,
-            "registered_image": registered_b64,
-          
-            "scan_type": scan_type,
-            "verified_at": verified_at
-        })
-    except Exception as log_err:
-        print("Could not save scan log to MongoDB:", log_err)
-
-    return verified_at
-
-
-
 for grid_file in fs.find():
     try:
         file_bytes = grid_file.read()
@@ -224,11 +130,7 @@ for grid_file in fs.find():
             print(f"Skipped GridFS file {grid_file.filename} (could not decode image)")
             continue
 
-        # Resolve employee_id / name from GridFS metadata or filename
-        # FIRST, before touching face encoding. This lets us always store
-        # the registered photo (known_face_images) below, even if face
-        # detection later fails on this photo - so the QR owner's picture
-        # still displays in the UI even when their encoding is unusable.
+      
         employee_id_from_file = getattr(grid_file, "employee_id", None)
         person_name = getattr(grid_file, "name", None)
 
@@ -241,8 +143,7 @@ for grid_file in fs.find():
             else:
                 person_name = base_name or "Unknown"
 
-        # Always store the photo, keyed by employee_id (or name as
-        # fallback) - independent of whether encoding succeeds below.
+       
         image_key = employee_id_from_file or person_name
         if image_key not in known_face_images:
             known_face_images[image_key] = (
@@ -318,8 +219,6 @@ def scan():
         baseline_frame = decode_frame(data["baseline"])
         action_frame = decode_frame(data["action"])
 
-        # Auto-enhance dim frames so face detection still works in low
-        # light - no-op on already well-lit frames.
         baseline_frame = enhance_low_light(baseline_frame)
         action_frame = enhance_low_light(action_frame)
 
@@ -434,11 +333,7 @@ def scan():
         mismatch_identified_employee_id = None
 
         if expected_employee_id:
-            # --- QR-based scan -------------------------------------------------
-            # The identity shown to the user is ALWAYS the QR code's owner
-            # (looked up from MongoDB), regardless of whether the live face
-            # actually matches. Whether access is granted or denied is
-            # decided purely by the match score vs MIN_ACCESS_SCORE_PERCENT.
+         
             own_idxs = [
                 i for i, eid in enumerate(known_face_employee_ids)
                 if eid == expected_employee_id
@@ -544,9 +439,7 @@ def scan():
         verified_at = None
 
         if expected_employee_id:
-            # QR-based scan: identity is always the QR owner's record.
-            # If access was denied, only expose employee_id / name / date_hired
-            # (no contact/address/QR image).
+         
             employees = load_employees()
             employee_info = employees.get(expected_employee_id)
 
@@ -614,9 +507,6 @@ def scan():
             "scanned_image": None,
             "registered_image": None
         })
-
-
-
 @deepfacerecog_bp.route("/log-attendance", methods=["POST"])
 def log_attendance():
     try:
@@ -628,6 +518,7 @@ def log_attendance():
         scanned_b64 = data.get("scanned_image")
         registered_b64 = data.get("registered_image")
         scan_type = data.get("scan_type")  # "time_in" or "time_out"
+        qr_code_image = data.get("qr_code_image")
 
         if not employee_id or not name:
             return jsonify({
@@ -641,9 +532,9 @@ def log_attendance():
                 "error": "scan_type must be 'time_in' or 'time_out'."
             }), 400
 
-        verified_at = log_verified_scan(
+        verified_at, scan_id = log_verified_scan(
             employee_id, name, score, scanned_b64, registered_b64,
-            scan_type=scan_type
+            scan_type=scan_type, qr_code_image=qr_code_image
         )
 
         return jsonify({
@@ -660,3 +551,60 @@ def log_attendance():
             "success": False,
             "error": "Server error while logging attendance."
         }), 500
+    
+@deepfacerecog_bp.route("/api/scan-logs")
+def api_scan_logs():
+    """
+    Feeds the ADMIN dashboard's Monitoring panel:
+        GET /deepfacerecog/api/scan-logs
+    Expected shape (see dashboard.html renderMonitoringGrid()):
+        { "logs": [ { id, name, qrId, photo, qrCodeImage, matchPercentage,
+                       status, timestamp } ] }
+
+    status is read directly from the stored document (see
+    log_scan_attempt / log_verified_scan above) rather than recomputed
+    from score, so "unverified" / "access_denied" / "unknown" / "no_face"
+    all pass through correctly instead of being collapsed into a single
+    score-based verified/unverified split.
+    """
+    try:
+        logs = []
+        cursor = fetch_recent_scans(200)
+
+        for doc in cursor:
+            score = doc.get("score", 0) or 0
+
+            photo = doc.get("scanned_image") or doc.get("registered_image")
+
+            verified_at = doc.get("verified_at")
+            if hasattr(verified_at, "isoformat"):
+             
+                verified_at_utc = (
+                    verified_at if verified_at.tzinfo is not None
+                    else verified_at.replace(tzinfo=timezone.utc)
+                )
+                timestamp = verified_at_utc.isoformat().replace("+00:00", "Z")
+            else:
+                timestamp = str(verified_at or "")
+
+            stored_status = doc.get("status")
+            status = stored_status or ("verified" if score >= MIN_ACCESS_SCORE_PERCENT else "unverified")
+
+            logs.append({
+                "id": str(doc.get("_id")),
+                "name": doc.get("name", "Unknown"),
+                "qrId": doc.get("employee_id", ""),
+                "photo": photo,
+                "qrCodeImage": get_qr_code_data_url(doc.get("employee_id")),
+                "matchPercentage": round(score, 1),
+                "status": status,
+                "note": doc.get("note"),
+                "timestamp": timestamp,
+                "scanType": doc.get("scan_type"),
+            })
+
+        return jsonify({"logs": logs})
+
+    except Exception as e:
+        print("ERROR fetching scan logs:", e)
+        return jsonify({"logs": [], "error": "Could not load scan logs."}), 500

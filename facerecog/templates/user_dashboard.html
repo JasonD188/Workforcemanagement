@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Travel & Tours — Employee Attendance</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          brand: { 50:'#eef7ec', 100:'#d7edd1', 500:'#5a9c3f', 600:'#47812f', 700:'#356123', 900:'#0f1a0c' },
+          ink:   { 900:'#14171a', 800:'#1c2023', 700:'#262b2f' },
+          gold:  { 400:'#f4b942', 500:'#e8a52c', 600:'#c98a1c' },
+        },
+        fontFamily: { sans: ['Inter','ui-sans-serif','system-ui','sans-serif'] }
+      }
+    }
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  html, body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+
+  #sidebar-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+  #sidebar-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+  #sidebar { transition: transform .28s ease; width: 17rem; }
+  @media (min-width: 768px) { #sidebar { width: 16rem; } }
+  #main-content { transition: margin-left .28s ease; }
+  #sidebar-overlay { transition: opacity .25s ease; }
+
+  body { background:#fbe8e8; color:#1c2023; transition: background-color .2s ease, color .2s ease; overflow-x:hidden; }
+  .dark body { background:#102240; color:#e7ece9; }
+
+  .fade-in { animation: fadeIn .25s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(4px);} to { opacity:1; transform:translateY(0);} }
+
+  .step-line { background: linear-gradient(90deg, #5a9c3f 0%, #5a9c3f var(--p, 0%), rgba(148,163,184,.35) var(--p, 0%)); }
+
+  #resultOverlay { backdrop-filter: blur(6px); z-index: 2000; }
+
+  /* --- Location check-in (step 3) --- */
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loc-pin-wrap { position: relative; overflow: hidden; background: #0b0f0d; aspect-ratio: 4/3; display:flex; align-items:center; justify-content:center; }
+  #loc-map { width: 100%; height: 100%; background: #0b0f0d; }
+  #loc-map .leaflet-control-attribution { font-size: 9px; }
+  /* Leaflet ships its own internal z-indexes (panes up to ~650, controls
+     800). Cap the whole map's stacking context to the wrap's own
+     stacking context so nothing inside it can ever paint above other
+     UI (e.g. the result overlay) even while the wrap itself is visible. */
+  .loc-pin-wrap { isolation: isolate; }
+
+  /* --- Step container width: same responsive max-width for every step,
+     including Step 2 (Verify Face) - no more landscape widening. --- */
+  #flow-container { max-width: 28rem; }
+
+  /* --- Responsive tweaks --- */
+  .step-track-label-full { display: none; }
+  .step-track-label-short { display: inline; }
+  @media (min-width: 480px) {
+    .step-track-label-full { display: inline; }
+    .step-track-label-short { display: none; }
+  }
+  #qr-frame { height: clamp(360px, 68vh, 560px); }
+  #face-frame { height: clamp(360px, 72vh, 600px); }
+  @media (max-width: 380px) {
+    #step1-dot, #step2-dot, #step3-dot { width: 1.5rem; height: 1.5rem; font-size: 0.65rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="flex min-h-screen">
+
+  <div id="sidebar-overlay" class="hidden opacity-0 fixed inset-0 bg-black/50 z-30 md:hidden"></div>
+
+  <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 -translate-x-full md:translate-x-0 shrink-0 text-black flex flex-col justify-between dark:border-r dark:border-white/5" style="background-color:#be780d;">
+    <div id="sidebar-scroll" class="overflow-y-auto flex-1 min-h-0">
+      <div class="flex flex-col items-center justify-center gap-3 px-5 py-6">
+        <div class="w-20 h-20 rounded-full ring-2 ring-white/80 overflow-hidden shrink-0 bg-white/30 flex items-center justify-center relative">
+          <svg id="sidebar-avatar-fallback" class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>
+          <img id="sidebar-avatar-img" class="hidden absolute inset-0 w-full h-full object-cover" alt="Profile photo">
+        </div>
+        <p id="sidebar-employee-name" class="text-center text-sm font-semibold text-black">Employee</p>
+        <p class="text-center text-[10px] text-gray-700 break-all">inquiries.cre8tedtravel@gmail.com</p>
+      </div>
+
+      <nav class="mt-2 px-3 space-y-1" id="sidebar-nav">
+        <button data-panel="attendance" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-violet-600 text-white font-semibold text-sm" title="Attendance">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/></svg>
+          <span class="sidebar-label whitespace-nowrap">Time In / Time Out</span>
+        </button>
+        <button data-panel="account" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-black/80 hover:bg-black/10 font-semibold text-sm transition" title="My Account">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14c-4.4 0-8 2-8 5v1h16v-1c0-3-3.6-5-8-5z"/></svg>
+          <span class="sidebar-label whitespace-nowrap">My Account</span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="relative px-5 pb-5 pt-8 bg-brand-700/40 overflow-hidden sidebar-label dark:bg-black/20 shrink-0">
+      <p class="text-sm font-semibold leading-snug">Empowering People.<br>Delivering Journeys.</p>
+    </div>
+  </aside>
+
+  <div id="main-content" class="flex-1 flex flex-col min-w-0 md:ml-64">
+
+    <header class="sticky top-0 z-20 bg-white border-b border-slate-200 dark:bg-ink-800 dark:border-white/5">
+      <div class="flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 lg:px-8 py-3 sm:py-3.5">
+        <div class="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+          <button id="sidebar-toggle-topbar" class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 transition shrink-0 md:hidden" title="Toggle menu">
+            <svg class="w-5 h-5 text-slate-600 dark:text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <h1 class="text-base sm:text-lg font-extrabold text-slate-800 dark:text-slate-100 truncate">Employee Attendance</h1>
+        </div>
+
+        <div class="flex items-center gap-1 sm:gap-3 shrink-0">
+          <button id="theme-toggle" class="relative p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition" title="Toggle dark mode">
+            <svg id="icon-sun" class="w-5 h-5 text-gold-500 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path stroke-linecap="round" d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            <svg id="icon-moon" class="w-5 h-5 text-brand-600 dark:text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+          </button>
+
+          <div class="relative">
+            <button id="profile-btn" class="flex items-center gap-2.5 group">
+              <div class="w-9 h-9 rounded-full bg-brand-100 dark:bg-brand-700/40 flex items-center justify-center overflow-hidden ring-2 ring-white dark:ring-ink-700 shadow shrink-0 relative">
+                <svg id="topbar-avatar-fallback" class="w-6 h-6 text-brand-600 dark:text-gold-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>
+                <img id="topbar-avatar-img" class="hidden absolute inset-0 w-full h-full object-cover" alt="Profile photo">
+              </div>
+              <svg class="w-4 h-4 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition hidden sm:block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div id="profile-dropdown" class="hidden absolute right-0 mt-2 w-44 bg-white dark:bg-ink-700 rounded-xl shadow-xl border border-slate-200 dark:border-white/10 py-1.5 fade-in">
+              <button data-action="account" class="menu-btn w-full text-left px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/10">My Account</button>
+              <button data-action="logout" class="menu-btn w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10">Log Out</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="p-3 sm:p-5 lg:p-8 space-y-4 sm:space-y-6 min-w-0">
+
+      <section id="panel-attendance" class="panel">
+
+        <div id="flow-container" class="mx-auto w-full transition-all duration-300">
+
+          <!-- 3-step tracker: QR must succeed before Face, Face before Location. -->
+          <div class="flex items-center gap-1.5 sm:gap-2 mb-5 px-1">
+            <div class="flex items-center gap-1 sm:gap-1.5 min-w-0">
+              <div id="step1-dot" class="w-7 h-7 rounded-full bg-gold-400 text-ink-900 flex items-center justify-center text-xs font-bold shrink-0">1</div>
+              <span id="step1-label" class="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap"><span class="step-track-label-short">QR</span><span class="step-track-label-full">Scan QR</span></span>
+            </div>
+            <div class="flex-1 h-0.5 step-line" id="step-connector-1" style="--p:0%"></div>
+            <div class="flex items-center gap-1 sm:gap-1.5 min-w-0">
+              <div id="step2-dot" class="w-7 h-7 rounded-full bg-slate-200 dark:bg-white/10 text-slate-400 flex items-center justify-center text-xs font-bold shrink-0">2</div>
+              <span id="step2-label" class="text-xs sm:text-sm font-semibold text-slate-400 whitespace-nowrap"><span class="step-track-label-short">Face</span><span class="step-track-label-full">Verify Face</span></span>
+            </div>
+            <div class="flex-1 h-0.5 step-line" id="step-connector-2" style="--p:0%"></div>
+            <div class="flex items-center gap-1 sm:gap-1.5 min-w-0">
+              <div id="step3-dot" class="w-7 h-7 rounded-full bg-slate-200 dark:bg-white/10 text-slate-400 flex items-center justify-center text-xs font-bold shrink-0">3</div>
+              <span id="step3-label" class="text-xs sm:text-sm font-semibold text-slate-400 whitespace-nowrap"><span class="step-track-label-short">Location</span><span class="step-track-label-full">Verify Location</span></span>
+            </div>
+          </div>
+
+          <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <!-- STEP 1: real existing QR scanner page, embedded as-is -->
+            <div id="step-qr-wrap">
+              <iframe id="qr-frame" src="/qrcodescanner/" title="Scan QR Badge"
+                class="w-full border-0"></iframe>
+            </div>
+
+            <!-- STEP 2: real existing face verification page, embedded as-is,
+                 inside the SAME responsive width/frame used by the other
+                 steps (no more forced landscape/2-column widening). The
+                 page loaded inside (/deepfacerecog/) keeps its own
+                 UI/design completely untouched and simply scales with the
+                 iframe like a normal responsive embed. -->
+            <div id="step-face-wrap" class="hidden">
+              <iframe id="face-frame" src="about:blank" title="Face Verification"
+                class="w-full border-0"></iframe>
+            </div>
+
+            <!-- STEP 3: Location check-in (GPS only - no photo). -->
+            <div id="step-location-wrap" class="hidden p-4 sm:p-5 space-y-4">
+
+              <div id="scan-frame" class="loc-pin-wrap rounded-2xl">
+                <div id="loc-map"></div>
+                <div id="loc-pin-icon" class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/70 bg-[#0b0f0d]">
+                  <svg id="loc-pin-svg" class="w-12 h-12 spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" d="M4 4v5h.582m15.836 0a8.001 8.001 0 00-15.418-2M20 20v-5h-.582m-15.836 0a8.001 8.001 0 0015.418 2"/></svg>
+                  <p class="text-xs">Locating you…</p>
+                </div>
+              </div>
+
+              <div id="loc-status" class="flex items-center gap-2.5 bg-slate-50 dark:bg-white/5 rounded-xl px-3.5 py-2.5 text-sm">
+                <svg id="loc-icon" class="w-4 h-4 text-slate-400 shrink-0 spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.836 0a8.001 8.001 0 00-15.418-2M20 20v-5h-.582m-15.836 0a8.001 8.001 0 0015.418 2"/></svg>
+                <span id="loc-text" class="text-slate-600 dark:text-slate-300">Getting your location…</span>
+              </div>
+
+              <p id="loc-error-text" class="hidden text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-xl px-3.5 py-2.5"></p>
+
+              <button id="btn-capture" disabled
+                class="w-full bg-gold-400 disabled:opacity-40 disabled:cursor-not-allowed text-ink-900 font-bold py-3 rounded-xl hover:bg-gold-500 transition flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><circle cx="12" cy="11" r="3"/></svg>
+                Submit Location
+              </button>
+
+              <button id="btn-retake" class="hidden w-full bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 font-semibold py-3 rounded-xl hover:bg-slate-200 dark:hover:bg-white/20 transition">
+                Retry Location
+              </button>
+            </div>
+          </div>
+
+          <p class="text-center text-xs text-slate-400 dark:text-slate-500 mt-4">
+            Hindi mo makita ang badge? Sabihin sa HR.
+          </p>
+        </div>
+
+      </section>
+
+      <section id="panel-account" class="panel hidden">
+        <div class="max-w-2xl mx-auto space-y-5">
+
+          <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6 flex items-center gap-4">
+            <div class="w-16 h-16 rounded-full ring-2 ring-brand-100 dark:ring-white/10 overflow-hidden shrink-0 bg-brand-100 dark:bg-brand-700/40 flex items-center justify-center relative">
+              <svg id="account-avatar-fallback" class="w-8 h-8 text-brand-600 dark:text-gold-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>
+              <img id="account-avatar-img" class="hidden absolute inset-0 w-full h-full object-cover" alt="Profile photo">
+            </div>
+            <div class="min-w-0">
+              <p id="account-employee-name" class="text-base font-bold text-slate-800 dark:text-slate-100 truncate">Employee</p>
+              <p id="account-employee-id" class="text-sm text-slate-400 dark:text-slate-500">—</p>
+            </div>
+          </div>
+
+          <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+            <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3">My Schedule</h3>
+            <div id="account-schedule-list" class="space-y-2 text-sm text-slate-500 dark:text-slate-400">
+              <p>Loading your schedule…</p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- Full-screen result overlay after the flow completes -->
+<div id="resultOverlay" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center p-4">
+  <div class="bg-white dark:bg-ink-700 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl w-full max-w-sm p-7 text-center fade-in">
+    <div id="result-icon" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"></div>
+    <h3 id="result-title" class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1">—</h3>
+    <p id="result-message" class="text-sm text-slate-500 dark:text-slate-400 mb-6">—</p>
+    <button id="btn-retry-location" class="hidden w-full bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 font-semibold py-3 rounded-xl hover:bg-slate-200 dark:hover:bg-white/20 transition mb-2">
+      Retry Location Only
+    </button>
+    <button id="btn-scan-next" class="w-full bg-gold-400 text-ink-900 font-bold py-3 rounded-xl hover:bg-gold-500 transition">
+      Scan Next
+    </button>
+  </div>
+</div>
+
+<script>
+const isDesktop = () => window.matchMedia('(min-width: 768px)').matches;
+
+function openMobileSidebar() {
+  document.getElementById('sidebar').classList.remove('-translate-x-full');
+  document.getElementById('sidebar').classList.add('translate-x-0');
+  const overlay = document.getElementById('sidebar-overlay');
+  overlay.classList.remove('hidden');
+  requestAnimationFrame(() => overlay.classList.remove('opacity-0'));
+}
+function closeMobileSidebar() {
+  document.getElementById('sidebar').classList.add('-translate-x-full');
+  document.getElementById('sidebar').classList.remove('translate-x-0');
+  const overlay = document.getElementById('sidebar-overlay');
+  overlay.classList.add('opacity-0');
+  setTimeout(() => overlay.classList.add('hidden'), 200);
+}
+function toggleMobileSidebar() {
+  document.getElementById('sidebar').classList.contains('translate-x-0') ? closeMobileSidebar() : openMobileSidebar();
+}
+
+function applyTheme(theme) {
+  const root = document.documentElement;
+  const sunIcon = document.getElementById('icon-sun');
+  const moonIcon = document.getElementById('icon-moon');
+  if (theme === 'dark') {
+    root.classList.add('dark'); sunIcon.classList.remove('hidden'); moonIcon.classList.add('hidden');
+  } else {
+    root.classList.remove('dark'); sunIcon.classList.add('hidden'); moonIcon.classList.remove('hidden');
+  }
+  localStorage.setItem('ar-theme', theme);
+}
+function initTheme() {
+  const saved = localStorage.getItem('ar-theme');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyTheme(saved || (prefersDark ? 'dark' : 'light'));
+}
+
+// --- Step tracker visuals -------------------------------------------------
+const dots = { 1: document.getElementById('step1-dot'), 2: document.getElementById('step2-dot'), 3: document.getElementById('step3-dot') };
+const labels = { 1: document.getElementById('step1-label'), 2: document.getElementById('step2-label'), 3: document.getElementById('step3-label') };
+const connectors = { 1: document.getElementById('step-connector-1'), 2: document.getElementById('step-connector-2') };
+
+const DONE = 'w-7 h-7 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-bold shrink-0';
+const ACTIVE = 'w-7 h-7 rounded-full bg-gold-400 text-ink-900 flex items-center justify-center text-xs font-bold shrink-0';
+const PENDING = 'w-7 h-7 rounded-full bg-slate-200 dark:bg-white/10 text-slate-400 flex items-center justify-center text-xs font-bold shrink-0';
+const LABEL_ACTIVE = 'text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap';
+const LABEL_PENDING = 'text-xs sm:text-sm font-semibold text-slate-400 whitespace-nowrap';
+
+function setStep(activeStep) {
+  for (let n = 1; n <= 3; n++) {
+    if (n < activeStep) {
+      dots[n].className = DONE; dots[n].innerHTML = '✓';
+      labels[n].className = LABEL_PENDING;
+    } else if (n === activeStep) {
+      dots[n].className = ACTIVE; dots[n].textContent = n;
+      labels[n].className = LABEL_ACTIVE;
+    } else {
+      dots[n].className = PENDING; dots[n].textContent = n;
+      labels[n].className = LABEL_PENDING;
+    }
+  }
+  connectors[1].style.setProperty('--p', activeStep > 1 ? '100%' : '0%');
+  connectors[2].style.setProperty('--p', activeStep > 2 ? '100%' : '0%');
+}
+
+let currentEmployeeId = null;
+let currentScanId = null;
+
+const avatarPairs = [
+  ['sidebar-avatar-img', 'sidebar-avatar-fallback'],
+  ['topbar-avatar-img', 'topbar-avatar-fallback'],
+  ['account-avatar-img', 'account-avatar-fallback'],
+];
+function setProfilePhoto(photo) {
+  avatarPairs.forEach(([imgId, fallbackId]) => {
+    const img = document.getElementById(imgId);
+    const fallback = document.getElementById(fallbackId);
+    if (!img || !fallback) return;
+    if (photo) {
+      img.onerror = () => { img.classList.add('hidden'); fallback.classList.remove('hidden'); };
+      img.src = photo;
+      img.classList.remove('hidden');
+      fallback.classList.add('hidden');
+    } else {
+      img.removeAttribute('src');
+      img.classList.add('hidden');
+      fallback.classList.remove('hidden');
+    }
+  });
+}
+
+
+const NAV_ACTIVE = 'nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-violet-600 text-white font-semibold text-sm';
+const NAV_INACTIVE = 'nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-black/80 hover:bg-black/10 font-semibold text-sm transition';
+function showPanel(panelName) {
+  document.querySelectorAll('.panel').forEach((el) => el.classList.add('hidden'));
+  const target = document.getElementById(`panel-${panelName}`);
+  if (target) { target.classList.remove('hidden'); target.classList.add('fade-in'); }
+
+  document.querySelectorAll('#sidebar-nav .nav-item').forEach((btn) => {
+    btn.className = btn.dataset.panel === panelName ? NAV_ACTIVE : NAV_INACTIVE;
+  });
+
+  if (panelName === 'account') loadMySchedule();
+
+  if (!isDesktop()) closeMobileSidebar();
+}
+document.getElementById('sidebar-nav').addEventListener('click', (e) => {
+  const btn = e.target.closest('.nav-item');
+  if (btn) showPanel(btn.dataset.panel);
+});
+
+window.onQrScanSuccess = function (employeeId, name, photo) {
+  currentEmployeeId = employeeId;
+  document.getElementById('sidebar-employee-name').textContent = name || 'Employee';
+  setProfilePhoto(photo);
+  document.getElementById('account-employee-id').textContent = employeeId || '—';
+
+  document.getElementById('step-qr-wrap').classList.add('hidden');
+  document.getElementById('step-face-wrap').classList.remove('hidden');
+  document.getElementById('step-face-wrap').classList.add('fade-in');
+  setStep(2);
+
+
+  document.getElementById('face-frame').src = `/deepfacerecog/?employee_id=${encodeURIComponent(employeeId)}`;
+};
+
+
+const CHECKIN_URL = '/api/userback';
+
+let locCoords = null;
+let locMap = null;
+let locMarker = null;
+let locAccuracyCircle = null;
+
+const btnCapture = document.getElementById('btn-capture');
+const btnRetake = document.getElementById('btn-retake');
+const locIcon = document.getElementById('loc-icon');
+const locText = document.getElementById('loc-text');
+const locErrorText = document.getElementById('loc-error-text');
+const locPinSvg = document.getElementById('loc-pin-svg');
+const locPinIconWrap = document.getElementById('loc-pin-icon');
+
+function renderLocationOnMap(lat, lng, accuracy) {
+
+  if (!locMap) {
+    locMap = L.map('loc-map', { zoomControl: false, attributionControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap',
+    }).addTo(locMap);
+  }
+  locMap.setView([lat, lng], 17);
+
+  if (locMarker) {
+    locMarker.setLatLng([lat, lng]);
+  } else {
+    locMarker = L.marker([lat, lng]).addTo(locMap);
+  }
+
+  if (accuracy) {
+    if (locAccuracyCircle) {
+      locAccuracyCircle.setLatLng([lat, lng]).setRadius(accuracy);
+    } else {
+      locAccuracyCircle = L.circle([lat, lng], {
+        radius: accuracy,
+        color: '#5a9c3f',
+        fillColor: '#5a9c3f',
+        fillOpacity: 0.15,
+        weight: 1,
+      }).addTo(locMap);
+    }
+  }
+
+
+  setTimeout(() => locMap.invalidateSize(), 50);
+
+  locPinIconWrap.classList.add('hidden');
+}
+
+function showLocError(msg) {
+  locErrorText.textContent = msg;
+  locErrorText.classList.remove('hidden');
+}
+function clearLocError() {
+  locErrorText.classList.add('hidden');
+}
+
+function updateCaptureState() {
+  btnCapture.disabled = !locCoords;
+}
+
+
+function startLocationGeo(isRetryLowAccuracy = false) {
+  if (!('geolocation' in navigator)) {
+    locText.textContent = 'Geolocation is not supported on this device.';
+    locIcon.classList.remove('spin');
+    locPinSvg.classList.remove('spin');
+    return;
+  }
+
+  locText.textContent = isRetryLowAccuracy
+    ? 'Trying a different method to find your location…'
+    : 'Getting your location…';
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+    
+      locCoords = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      };
+      locIcon.classList.remove('spin', 'text-slate-400');
+      locIcon.classList.add('text-brand-500');
+      locPinSvg.classList.remove('spin');
+      locText.textContent = `Location found · accuracy ±${Math.round(locCoords.accuracy)}m`;
+
+  
+      updateCaptureState();
+
+      try {
+        renderLocationOnMap(locCoords.lat, locCoords.lng, locCoords.accuracy);
+      } catch (e) {
+        console.error('Map render failed (non-fatal, check-in still works):', e);
+        locPinIconWrap.classList.add('hidden');
+      }
+    },
+    (err) => {
+   
+      if (err.code === err.TIMEOUT && !isRetryLowAccuracy) {
+        startLocationGeo(true);
+        return;
+      }
+
+      locIcon.classList.remove('spin');
+      locPinSvg.classList.remove('spin');
+      locText.textContent = 'Could not get your location.';
+
+      let msg;
+      if (err.code === err.PERMISSION_DENIED) {
+        msg = 'Location access was blocked. Please allow location permission and reload.';
+      } else if (err.code === err.TIMEOUT) {
+        msg = 'Location request timed out. Check your internet/GPS connection and try again, or move near a window if indoors.';
+      } else {
+        msg = 'Could not determine your location. Move to an open area and retry.';
+      }
+      showLocError(msg);
+    },
+    {
+      enableHighAccuracy: !isRetryLowAccuracy,
+      timeout: isRetryLowAccuracy ? 20000 : 12000,
+      maximumAge: isRetryLowAccuracy ? 60000 : 0,
+    }
+  );
+}
+
+function resetLocationStepUI() {
+  clearLocError();
+  locCoords = null;
+  locPinIconWrap.classList.remove('hidden');
+  locIcon.classList.remove('text-brand-500');
+  locIcon.classList.add('spin', 'text-slate-400');
+  locPinSvg.classList.add('spin');
+  locText.textContent = 'Getting your location…';
+  btnRetake.classList.add('hidden');
+  btnCapture.textContent = '';
+  btnCapture.innerHTML = `
+    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><circle cx="12" cy="11" r="3"/></svg>
+    Check In`;
+  updateCaptureState();
+}
+
+btnRetake.addEventListener('click', () => {
+  resetLocationStepUI();
+  startLocationGeo();
+});
+btnCapture.addEventListener('click', handleLocationCapture);
+
+async function handleLocationCapture() {
+  if (!locCoords) {
+    showLocError('Waiting for your location — please try again in a moment.');
+    return;
+  }
+  clearLocError();
+  btnCapture.disabled = true;
+  btnCapture.textContent = 'Submitting…';
+
+  try {
+    const res = await fetch(CHECKIN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employee_id: currentEmployeeId || '',
+        scan_id: currentScanId || '',
+        lat: locCoords.lat,
+        lng: locCoords.lng,
+        accuracy: locCoords.accuracy,
+        timestamp: new Date().toISOString(),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && !data.error) {
+      document.getElementById('btn-retry-location').classList.add('hidden');
+ 
+      hideAllStepPanels();
+      showResult('success', data.employeeName || 'Verified', data.message || 'Attendance recorded.');
+    } else {
+      throw new Error(data.error || 'Location check-in failed.');
+    }
+  } catch (err) {
+    hideAllStepPanels();
+    document.getElementById('btn-retry-location').classList.remove('hidden');
+    showResult('error', 'Location Check-In Failed', err.message || 'Could not submit the location check-in.');
+    btnRetake.classList.remove('hidden');
+  }
+}
+
+function hideAllStepPanels() {
+  document.getElementById('step-qr-wrap').classList.add('hidden');
+  document.getElementById('step-face-wrap').classList.add('hidden');
+  document.getElementById('step-location-wrap').classList.add('hidden');
+}
+
+function goToLocationStep() {
+  document.getElementById('step-face-wrap').classList.add('hidden');
+  document.getElementById('step-location-wrap').classList.remove('hidden');
+  document.getElementById('step-location-wrap').classList.add('fade-in');
+  setStep(3);
+
+  resetLocationStepUI();
+  startLocationGeo();
+}
+
+
+window.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type === 'face-scan-success') {
+    currentScanId = data.scanId || null;
+    goToLocationStep();
+  } else if (data.type === 'face-scan-error') {
+    hideAllStepPanels();
+    showResult('error', 'Face Scan Failed', data.message || '...');
+  }
+});
+
+function showResult(kind, title, message) {
+  const icon = document.getElementById('result-icon');
+  if (kind === 'success') {
+    icon.className = 'w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600';
+    icon.textContent = '✓';
+  } else {
+    icon.className = 'w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl bg-red-50 dark:bg-red-500/10 text-red-600';
+    icon.textContent = '✕';
+  }
+  document.getElementById('result-title').textContent = title;
+  document.getElementById('result-message').textContent = message;
+  document.getElementById('resultOverlay').classList.remove('hidden');
+}
+
+function resetToQrStep() {
+  showPanel('attendance');
+  document.getElementById('resultOverlay').classList.add('hidden');
+  document.getElementById('face-frame').src = 'about:blank';
+  document.getElementById('step-face-wrap').classList.add('hidden');
+  document.getElementById('step-location-wrap').classList.add('hidden');
+  document.getElementById('step-qr-wrap').classList.remove('hidden');
+  document.getElementById('step-qr-wrap').classList.add('fade-in');
+  setStep(1);
+  currentEmployeeId = null;
+  currentScanId = null;
+  document.getElementById('sidebar-employee-name').textContent = 'Employee';
+  document.getElementById('account-employee-id').textContent = '—';
+  setProfilePhoto(null);
+
+  
+  document.getElementById('qr-frame').src = `/qrcodescanner/?t=${Date.now()}`;
+}
+
+function retryLocationOnly() {
+  document.getElementById('resultOverlay').classList.add('hidden');
+  document.getElementById('step-qr-wrap').classList.add('hidden');
+  document.getElementById('step-face-wrap').classList.add('hidden');
+  document.getElementById('step-location-wrap').classList.remove('hidden');
+  setStep(3);
+  resetLocationStepUI();
+  startLocationGeo();
+}
+
+document.getElementById('btn-scan-next').addEventListener('click', resetToQrStep);
+document.getElementById('btn-retry-location').addEventListener('click', retryLocationOnly);
+
+async function loadCurrentUser() {
+  try {
+    const res = await fetch('/api/me', { credentials: 'same-origin' });
+    if (!res.ok) return; // not signed in - keep placeholders
+    const data = await res.json();
+    if (!data.success || !data.employee) return;
+
+    const emp = data.employee;
+    document.getElementById('sidebar-employee-name').textContent = emp.name || 'Employee';
+    document.getElementById('account-employee-name').textContent = emp.name || 'Employee';
+    document.getElementById('account-employee-id').textContent = emp.employee_id || '—';
+    currentEmployeeId = emp.employee_id || currentEmployeeId;
+    setProfilePhoto(emp.photo_url);
+  } catch (err) {
+    console.error('Could not load current user:', err);
+  }
+}
+
+
+async function loadMySchedule() {
+  const container = document.getElementById('account-schedule-list');
+  if (!container) return;
+
+  if (!currentEmployeeId) {
+    container.innerHTML = '<p>Mag-sign in muna sa iyong account para makita ang iyong schedule.</p>';
+    return;
+  }
+
+  container.innerHTML = '<p>Ikinakarga ang iyong schedule…</p>';
+
+  try {
+    const res = await fetch('/api/schedules', { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('Request failed');
+    const data = await res.json();
+    const schedules = data.schedules || [];
+
+    const myName = (document.getElementById('sidebar-employee-name').textContent || '').trim().toLowerCase();
+
+    const mine = schedules.filter(s => {
+      if (s.employeeQrId && s.employeeQrId === currentEmployeeId) return true;
+      const empNames = (s.employees || []).map(e => (typeof e === 'string' ? e : (e.name || '')).trim().toLowerCase());
+      return myName && empNames.includes(myName);
+    });
+
+    if (!mine.length) {
+      container.innerHTML = '<p>Wala ka pang naka-schedule na shift sa ngayon.</p>';
+      return;
+    }
+
+    mine.sort((a, b) => (a.id || 0) - (b.id || 0));
+
+    container.innerHTML = mine.map(s => {
+      const isShift = s.type === 'shift';
+      const typeLabel = isShift ? 'Shift' : 'Schedule';
+      const typeColor = isShift
+        ? 'text-violet-600 bg-violet-50 dark:bg-violet-500/10'
+        : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10';
+      const legacyParts = (s.time || '').split(/\s*-\s*/);
+      const timeIn = s.timeIn || legacyParts[0] || '';
+      const timeOut = s.timeOut || legacyParts[1] || '';
+      const replacing = isShift && s.replacingEmployee
+        ? `<p class="text-[11px] text-slate-400 mt-1.5">Papalit kay: <span class="font-medium text-slate-500 dark:text-slate-300">${s.replacingEmployee}</span></p>`
+        : '';
+      return `
+        <div class="border border-slate-100 dark:border-white/10 rounded-xl p-3.5">
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ${typeColor}">${typeLabel}</span>
+            <span class="text-xs text-slate-400 dark:text-slate-500">${s.date || '—'}</span>
+          </div>
+          <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">${s.location || s.shiftName || '—'}</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${timeIn || '—'} – ${timeOut || '—'}</p>
+          ${replacing}
+        </div>`;
+    }).join('');
+  } catch (err) {
+    console.error('Could not load schedule:', err);
+    container.innerHTML = '<p>Hindi ma-load ang schedule mo ngayon. Subukan ulit mamaya.</p>';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
+  closeMobileSidebar();
+  setStep(1);
+  loadCurrentUser().then(loadMySchedule);
+
+  window.addEventListener('resize', () => {
+    if (isDesktop()) {
+      document.getElementById('sidebar').classList.remove('-translate-x-full', 'translate-x-0');
+      document.getElementById('sidebar-overlay').classList.add('hidden', 'opacity-0');
+    } else {
+      closeMobileSidebar();
+    }
+  });
+
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const isDark = document.documentElement.classList.contains('dark');
+    applyTheme(isDark ? 'light' : 'dark');
+  });
+  document.getElementById('sidebar-toggle-topbar').addEventListener('click', toggleMobileSidebar);
+  document.getElementById('sidebar-overlay').addEventListener('click', closeMobileSidebar);
+
+  const profileBtn = document.getElementById('profile-btn');
+  const profileDropdown = document.getElementById('profile-dropdown');
+  profileBtn.addEventListener('click', (e) => { e.stopPropagation(); profileDropdown.classList.toggle('hidden'); });
+  document.addEventListener('click', () => profileDropdown.classList.add('hidden'));
+  document.querySelector('#profile-dropdown [data-action="account"]').addEventListener('click', () => {
+    profileDropdown.classList.add('hidden');
+    showPanel('account');
+  });
+  document.querySelector('#profile-dropdown [data-action="logout"]').addEventListener('click', async () => {
+    profileDropdown.classList.add('hidden');
+    try {
+      await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+    } catch (err) {
+      console.error('Logout request failed:', err);
+    }
+
+    window.location.href = '/';
+  });
+});
+</script>
+</body>
+</html>

@@ -9,30 +9,66 @@
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 
+<style>
+  html, body { overflow-x: hidden; }
+
+  /* html5-qrcode injects its own video/canvas/select/button elements
+     into #reader at render() time with their own inline sizing. Force
+     the actual camera feed (video/canvas) to respect the container
+     width instead of overflowing it (this is what was clipping
+     "Select Camera" / "Stop Scanning" on narrow/mobile screens). */
+  #reader { width: 100% !important; }
+  #reader video,
+  #reader canvas {
+    width: 100% !important;
+    height: auto !important;
+  }
+  /* IMPORTANT: do NOT force small library icons (e.g. the info/torch
+     icon) to width:100% - that stretches a tiny icon into a giant
+     circle covering the whole camera view. Just cap them so they can
+     never overflow the container, and let them keep their own size. */
+  #reader img {
+    max-width: 100%;
+    height: auto;
+  }
+  #reader select,
+  #reader button {
+    max-width: 100%;
+    box-sizing: border-box;
+    white-space: normal;
+    word-break: break-word;
+  }
+  #reader__dashboard_section_csr,
+  #reader__dashboard_section_swaplink,
+  #reader__camera_selection {
+    max-width: 100%;
+  }
+</style>
+
 </head>
 
-<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center p-6">
+<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center p-3 sm:p-6">
 
-<h1 class="text-4xl font-bold mb-6">
+<h1 class="text-2xl sm:text-4xl font-bold mb-4 sm:mb-6 text-center px-2">
 QR Code Scanner
 </h1>
 
 
-<div class="bg-slate-800 p-5 rounded-xl">
+<div class="bg-slate-800 p-3 sm:p-5 rounded-xl w-full max-w-[320px] mx-auto">
 
-<div id="reader" class="w-80"></div>
+<div id="reader" class="w-full max-w-[320px] mx-auto"></div>
 
 </div>
 
 
 <div id="result"
-class="mt-6 bg-slate-800 p-5 rounded-xl w-96 hidden">
+class="mt-6 bg-slate-800 p-4 sm:p-5 rounded-xl w-full max-w-sm mx-auto hidden">
 
-<h2 class="text-2xl font-bold mb-3">
+<h2 class="text-xl sm:text-2xl font-bold mb-3">
 Employee Information
 </h2>
 
-<p id="info"></p>
+<p id="info" class="text-sm sm:text-base break-words"></p>
 
 </div>
 
@@ -40,9 +76,9 @@ Employee Information
      "not found" ba talaga o "hindi na-reach" yung server, at may
      Scan Again button para hindi na kailangan i-reload manually. -->
 <div id="error-box"
-class="mt-6 bg-red-900/40 border border-red-500/40 p-5 rounded-xl w-96 hidden">
+class="mt-6 bg-red-900/40 border border-red-500/40 p-4 sm:p-5 rounded-xl w-full max-w-sm mx-auto hidden">
 
-<p id="error-message" class="text-red-200"></p>
+<p id="error-message" class="text-red-200 text-sm sm:text-base break-words"></p>
 
 <button id="retry-btn"
 class="mt-4 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg">

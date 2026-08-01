@@ -44,9 +44,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <!-- Face recognition (in-browser, no server ML needed) -->
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<!-- Leaflet (interactive map for picking the Drop Location) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   html, body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+
   .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
   .dark .scrollbar-thin::-webkit-scrollbar-thumb { background: #3f4b45; }
@@ -71,92 +75,108 @@
   #main-content { transition: margin-left .28s ease; }
   #sidebar-overlay { transition: opacity .25s ease; }
 
-  body { background:#f1f5f4; color:#1c2023; transition: background-color .2s ease, color .2s ease; overflow-x: hidden; }
-  .dark body { background:#101312; color:#e7ece9; }
+  body { background:#fbe8e8; color:#1c2023; transition: background-color .2s ease, color .2s ease; overflow-x: hidden; }
+  .dark body { background:#102240; color:#e7ece9; }
+
+  /* Single big decorative blob per corner, kept flush against the edge
+     so it reads purely as a background accent behind the dashboard
+     content — not repeated shapes scattered around. */
+  main { position: relative; }
+  .bg-blob-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .bg-blob-layer svg { position: absolute; opacity: .85; }
+  .dark .bg-blob-layer svg { opacity: .95; }
+  main > * { position: relative; z-index: 1; }
+  main > .bg-blob-layer { z-index: 0; }
 
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 </style>
 </head>
-<body class="bg-slate-100 text-slate-800 dark:bg-ink-900 dark:text-slate-100">
+<body>
 
 <div class="flex min-h-screen">
 
   <div id="sidebar-overlay" class="hidden opacity-0 fixed inset-0 bg-black/50 z-30 md:hidden"></div>
 
-   <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 -translate-x-full md:translate-x-0 shrink-0 bg-brand-900 text-white flex flex-col justify-between dark:bg-ink-800 dark:border-r dark:border-white/5">
+   <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 -translate-x-full md:translate-x-0 shrink-0 text-black flex flex-col justify-between dark:border-r dark:border-white/5" style="background-color:#be780d;">
       <div id="sidebar-scroll" class="overflow-y-auto flex-1 min-h-0">
-      <div class="flex items-center gap-3 px-5 py-6">
-          <div class="w-9 h-9 rounded-full ring-2 ring-white/80 overflow-hidden shrink-0">
-          <img src="{{ url_for('static', filename='logo.jpg') }}"
-      alt="Logo"
-      class="w-full h-full object-cover">
-          </div>
-          <div class="leading-tight sidebar-brand-text">
-            <p class="font-extrabold tracking-tight">A.R</p>
-            <p class="text-[10px] tracking-widest text-gold-400/90 whitespace-nowrap">TRAVEL &amp; TOURS</p>
-          </div>
-        </div>
+      <div class="flex flex-col items-center justify-center gap-3 px-5 py-6">
+    <div class="w-20 h-20 rounded-full ring-2 ring-white/80 overflow-hidden shrink-0">
+        <img src="{{ url_for('static', filename='logo (2).jpg') }}"
+             alt="Logo"
+             class="w-full h-full object-cover">
+    </div>
+
+    <p class="text-center text-[10px] text-gray-700 break-all">
+    inquiries.cre8tedtravel@gmail.com
+</p>
+</div>
 
         <nav class="mt-2 px-3 space-y-1" id="sidebar-nav">
-          <button data-panel="dashboard" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-brand-600 font-semibold text-sm" title="Dashboard">
+          <button data-panel="dashboard" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-violet-600 text-white font-semibold text-sm" title="Dashboard">
             <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h4a1 1 0 001-1V10"/></svg>
             <span class="sidebar-label whitespace-nowrap">Dashboard</span>
           </button>
 
-          <p class="px-3 pt-4 pb-1 text-[11px] font-bold tracking-widest text-gold-400/70 sidebar-label whitespace-nowrap">WORKFORCE</p>
+          <p class="px-3 pt-4 pb-1 text-[11px] font-bold tracking-widest text-black/70 sidebar-label whitespace-nowrap">WORKFORCE</p>
 
-          <button data-panel="time-attendance" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-brand-50/90 hover:bg-white/10 transition" title="Time and Attendance System">
-            <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/></svg>
+          <button data-panel="time-attendance" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Time and Attendance System">
+            <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7v5l3 3"/></svg>
             <span class="text-left sidebar-label">Time and Attendance System</span>
           </button>
 
-          <button data-panel="shift-schedule" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-brand-50/90 hover:bg-white/10 transition" title="Shift and Schedule Management">
+          <button data-panel="shift-schedule" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Shift and Schedule Management">
             <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path stroke-linecap="round" d="M3 9h18M8 3v3M16 3v3"/></svg>
             <span class="text-left sidebar-label">Shift and Schedule Management</span>
           </button>
 
-          <button data-panel="timesheet" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-brand-50/90 hover:bg-white/10 transition" title="Timesheet Management">
+          <button data-panel="timesheet" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Timesheet Management">
             <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3h6l1 2h2a1 1 0 011 1v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1h2l1-2z"/><path stroke-linecap="round" d="M9 11h6M9 15h6"/></svg>
             <span class="sidebar-label">Timesheet Management</span>
           </button>
 
-          <button data-panel="leave-management" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-brand-50/90 hover:bg-white/10 transition" title="Leave Management">
+          <button data-panel="leave-management" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Leave Management">
             <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path stroke-linecap="round" d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             <span class="sidebar-label">Leave Management</span>
           </button>
 
-          <button data-panel="analytics" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-brand-50/90 hover:bg-white/10 transition" title="Workforce Analytics">
+          <button data-panel="analytics" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Workforce Analytics">
             <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 19h16M8 19V9m4 10V5m4 14v-6"/></svg>
-            <span class="text-left sidebar-label">Workforce Analytics </span>
+            <span class="text-left sidebar-label whitespace-nowrap">Workforce Analytics </span>
           </button>
 
-          <p class="px-3 pt-4 pb-1 text-[11px] font-bold tracking-widest text-gold-400/70 sidebar-label whitespace-nowrap">ATTENDANCE OPS</p>
+          <p class="px-3 pt-4 pb-1 text-[11px] font-bold tracking-widest text-black/70 sidebar-label whitespace-nowrap">ATTENDANCE OPS</p>
 
-          <button data-panel="scanner" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-brand-50/90 hover:bg-white/10 transition" title="Scanner">
-            <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7V5a1 1 0 011-1h2M4 17v2a1 1 0 001 1h2M20 7V5a1 1 0 00-1-1h-2M20 17v2a1 1 0 01-1 1h-2M4 12h16"/></svg>
-            <span class="text-left sidebar-label whitespace-nowrap">Scanner </span>
+          <button data-panel="monitoring" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Monitoring">
+            <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span class="text-left sidebar-label whitespace-nowrap">Monitoring </span>
           </button>
 
-          <button data-panel="register-employee" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-brand-50/90 hover:bg-white/10 transition" title="Register Employee">
+          <button data-panel="register-employee" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Register Employee">
             <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path stroke-linecap="round" stroke-linejoin="round" d="M3.5 19c.6-3 3-5 5.5-5s4.9 2 5.5 5M17 8h4M19 6v4"/></svg>
             <span class="text-left sidebar-label whitespace-nowrap">Register Employee </span>
+          </button>
+
+          <button data-panel="employee-list" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Employee List">
+            <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h11"/><circle cx="19" cy="18" r="1.6"/></svg>
+            <span class="text-left sidebar-label whitespace-nowrap">Employee List </span>
           </button>
         </nav>
 
       
         <div class="mt-4 px-2">
-          <img src="{{ url_for('static', filename='logo-removebg-preview.png') }}" style="background:none"class="w-full object-contain">
+          <img src="{{ url_for('static', filename='background.png') }}" style="background:none"class="w-full object-contain">
         </div>
       </div>
 
       <div class="relative px-5 pb-5 pt-8 bg-brand-700/40 overflow-hidden sidebar-label dark:bg-black/20 shrink-0">
         <p class="text-sm font-semibold leading-snug">Empowering People.<br>Delivering Journeys.</p>
-        <svg class="absolute right-2 bottom-2 w-20 h-20 opacity-80" viewBox="0 0 64 64" fill="none">
-          <rect x="30" y="30" width="14" height="22" rx="2" fill="#f4b942" fill-opacity="0.9"/>
-          <rect x="10" y="38" width="12" height="16" rx="2" fill="#f4b942" fill-opacity="0.7"/>
-          <circle cx="36" cy="52" r="2" fill="#0f1a0c"/>
-          <circle cx="16" cy="54" r="2" fill="#0f1a0c"/>
-        </svg>
+        <svg class="absolute right-2 bottom-2 w-20 h-20 opacity-80" viewBox="0 0 64 64" fill="none"> <rect x="30" y="30" width="14" height="22" rx="2" fill="#f4b942" fill-opacity="0.9"/> <rect x="10" y="38" width="12" height="16" rx="2" fill="#f4b942" fill-opacity="0.7"/> <circle cx="36" cy="52" r="2" fill="#0f1a0c"/> <circle cx="16" cy="54" r="2" fill="#0f1a0c"/> </svg>
       </div>
     </aside>
 
@@ -220,22 +240,61 @@
 
     <main class="p-3 sm:p-5 lg:p-8 space-y-4 sm:space-y-6 min-w-0">
 
+      <div class="bg-blob-layer" aria-hidden="true">
+        <!-- 1: top-right, yellow/gold -->
+        <svg style="top:-170px; right:-170px; width:540px; height:540px;" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+          <path d="M65 30C85 15 115 20 130 40C145 60 135 75 150 90C165 105 185 100 195 120C205 140 195 165 170 175C145 185 120 175 100 185C80 195 55 185 45 165C35 145 45 125 35 105C25 85 30 60 45 45C52 37 58 33 65 30Z" fill="#f4b942" fill-opacity="0.30"/>
+        </svg>
+        <!-- 2: bottom-left, brand green -->
+        <svg style="bottom:-220px; left:-220px; width:640px; height:640px;" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+          <path d="M65 30C85 15 115 20 130 40C145 60 135 75 150 90C165 105 185 100 195 120C205 140 195 165 170 175C145 185 120 175 100 185C80 195 55 185 45 165C35 145 45 125 35 105C25 85 30 60 45 45C52 37 58 33 65 30Z" fill="#5a9c3f" fill-opacity="0.22"/>
+        </svg>
+        <!-- 3: top-left, violet -->
+        <svg style="top:-130px; left:-130px; width:400px; height:400px; transform: rotate(60deg);" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+          <path d="M65 30C85 15 115 20 130 40C145 60 135 75 150 90C165 105 185 100 195 120C205 140 195 165 170 175C145 185 120 175 100 185C80 195 55 185 45 165C35 145 45 125 35 105C25 85 30 60 45 45C52 37 58 33 65 30Z" fill="#8b5cf6" fill-opacity="0.20"/>
+        </svg>
+        <!-- 4: bottom-right, emerald -->
+        <svg style="bottom:-150px; right:-150px; width:440px; height:440px; transform: rotate(-40deg);" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+          <path d="M65 30C85 15 115 20 130 40C145 60 135 75 150 90C165 105 185 100 195 120C205 140 195 165 170 175C145 185 120 175 100 185C80 195 55 185 45 165C35 145 45 125 35 105C25 85 30 60 45 45C52 37 58 33 65 30Z" fill="#10b981" fill-opacity="0.20"/>
+        </svg>
+        <!-- 5: right edge, middle, gold-brown accent -->
+        <svg style="top:38%; right:-190px; width:460px; height:460px; transform: rotate(120deg);" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+          <path d="M65 30C85 15 115 20 130 40C145 60 135 75 150 90C165 105 185 100 195 120C205 140 195 165 170 175C145 185 120 175 100 185C80 195 55 185 45 165C35 145 45 125 35 105C25 85 30 60 45 45C52 37 58 33 65 30Z" fill="#c98a1c" fill-opacity="0.18"/>
+        </svg>
+        <!-- 6: left edge, middle, rose/pink accent -->
+        <svg style="top:32%; left:-170px; width:420px; height:420px; transform: rotate(-70deg);" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+          <path d="M65 30C85 15 115 20 130 40C145 60 135 75 150 90C165 105 185 100 195 120C205 140 195 165 170 175C145 185 120 175 100 185C80 195 55 185 45 165C35 145 45 125 35 105C25 85 30 60 45 45C52 37 58 33 65 30Z" fill="#ec4899" fill-opacity="0.18"/>
+        </svg>
+        <!-- 7: bottom edge, center, sky blue accent -->
+        <svg style="bottom:-200px; left:50%; width:500px; height:500px; transform: translateX(-50%) rotate(15deg);" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+          <path d="M65 30C85 15 115 20 130 40C145 60 135 75 150 90C165 105 185 100 195 120C205 140 195 165 170 175C145 185 120 175 100 185C80 195 55 185 45 165C35 145 45 125 35 105C25 85 30 60 45 45C52 37 58 33 65 30Z" fill="#38bdf8" fill-opacity="0.16"/>
+        </svg>
+      </div>
+
       <section id="panel-dashboard" class="panel space-y-4 sm:space-y-6">
 
-        <div class="relative rounded-2xl overflow-hidden text-white">
-          <img src="{{ url_for('static', filename='logo.jpg') }}"
-               class="absolute inset-0 w-full h-full object-cover" />
-          <div class="absolute inset-0 bg-gradient-to-r from-brand-900/85 via-brand-700/55 to-transparent"></div>
-          <div class="relative z-10 px-5 sm:px-8 py-7 sm:py-9 max-w-xl">
-            <h1 class="text-2xl sm:text-3xl font-extrabold flex items-center gap-2">Welcome back, A.R.Travel&Tours! <span></span></h1>
-            <p class="mt-2 text-sm sm:text-base text-brand-50/90">Manage your workforce, schedules and operations seamlessly across all travel destinations.</p>
-            <button id="btn-todays-overview" class="mt-5 inline-flex items-center gap-2 bg-gold-400 text-brand-900 font-semibold text-sm px-5 py-2.5 rounded-lg hover:bg-gold-500 transition shadow">
-              View Today's Overview
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-            </button>
-          </div>
-        </div>
+         <div class="relative rounded-2xl overflow-hidden spect-[4/3] sm:aspect-[16/7] lg:aspect-[16/6]">
+  <img src="{{ url_for('static', filename='backgrounds.png') }}"
+       class="absolute inset-0 w-full h-full object-cover"
+       style="mix-blend-mode: multiply; opacity: 0.5;" />
 
+  <div class="relative z-10 h-full flex flex-col justify-center px-5 sm:px-8 py-6 sm:py-9 max-w-xl">
+    <h1 class="text-xl sm:text-2xl lg:text-3xl font-extrabold flex items-center gap-2">
+      Welcome back,
+      <span class="text-amber-700">CREA</span><span class="text-black font-black text-3xl sm:text-4xl lg:text-5xl">&#56;</span><span class="text-amber-700">TED</span>!
+      <span></span>
+    </h1>
+    <p class="mt-2 text-sm sm:text-base text-black dark:text-brand-50/90">
+  Manage your workforce, schedules and operons seamlessly across all travel destinations.
+</p>
+    <button id="btn-todays-overview" class="mt-5 inline-flex items-center gap-2 bg-gold-400 text-brand-900 font-semibold text-sm px-5 py-2.5 rounded-lg hover:bg-gold-500 transition shadow w-fit">
+      View Today's Overview
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+      </svg>
+    </button>
+  </div>
+</div>
         <div class="flex items-center justify-between flex-wrap gap-2">
           <div class="flex items-center gap-2">
             <h3 class="font-bold text-slate-800 dark:text-slate-100">How the numbers are computed</h3>
@@ -315,77 +374,53 @@
       <section id="panel-leave-management" class="panel hidden"></section>
       <section id="panel-analytics" class="panel hidden"></section>
 
-      <!-- ============ SCANNER PANEL ============ -->
-      <section id="panel-scanner" class="panel hidden">
+      <!-- ============ MONITORING PANEL ============ -->
+      <section id="panel-monitoring" class="panel hidden">
         <div class="flex flex-wrap items-center gap-4 mb-6">
           <div class="w-12 h-12 rounded-xl bg-ink-900 text-white flex items-center justify-center shrink-0">
-            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7V5a1 1 0 011-1h2M4 17v2a1 1 0 001 1h2M20 7V5a1 1 0 00-1-1h-2M20 17v2a1 1 0 01-1 1h-2M4 12h16"/></svg>
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></svg>
           </div>
           <div class="min-w-0">
-            <h2 class="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100">Scanner</h2>
-            <p class="text-sm text-slate-500 dark:text-slate-400">Scan a QR code, then verify with Face Recognition. Results appear on the side.</p>
+            <h2 class="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100">Monitoring</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Live view of every employee scan — captured photo, match confidence, location check-in, date and time.</p>
           </div>
-          <button data-panel="dashboard" class="nav-item sm:ml-auto text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-4 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition">← Back to Dashboard</button>
+          <div class="sm:ml-auto flex items-center gap-2">
+            <select id="monitoring-filter-status" class="text-sm border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500/40">
+              <option value="all">All statuses</option>
+              <option value="verified">Verified</option>
+              <option value="unverified">Unverified / Low match</option>
+            </select>
+            <button id="btn-refresh-monitoring" class="text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-4 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.836 0a8.001 8.001 0 00-15.418-2M20 20v-5h-.582m-15.836 0a8.001 8.001 0 0015.418 2"/></svg>
+              Refresh
+            </button>
+          </div>
+          <button data-panel="dashboard" class="nav-item text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-4 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition">← Back to Dashboard</button>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <!-- LEFT: active scanner stage -->
-          <div class="lg:col-span-2 space-y-4">
-            <div id="qr-scanner-step">
-              <div class="flex items-center gap-2 mb-2">
-                <span class="w-6 h-6 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
-                <h3 class="font-bold text-slate-800 dark:text-slate-100">QR Code Scanner</h3>
-              </div>
-              <div id="qr-scanner-container" class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden min-h-[420px]">
-                <iframe id="qr-scanner-frame" src="/qrcodescanner/" title="QR Code Scanner" class="w-full h-[420px] border-0"></iframe>
-              </div>
-            </div>
-
-            <div id="face-scanner-step" class="hidden">
-              <div class="flex items-center justify-between mb-2">
-                <div class="flex items-center gap-2">
-                  <span class="w-6 h-6 rounded-full bg-gold-500 text-brand-900 text-xs font-bold flex items-center justify-center shrink-0">2</span>
-                  <h3 class="font-bold text-slate-800 dark:text-slate-100">Face Recognition <span class="font-normal text-slate-400">(verification)</span></h3>
-                </div>
-                <button id="scanner-back-to-qr" class="text-xs font-semibold text-brand-600 dark:text-gold-400 hover:underline">← Scan a different QR code</button>
-              </div>
-              <div id="face-scanner-container" class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden min-h-[420px]">
-                <iframe id="face-scanner-frame" src="about:blank" data-src="/deepfacerecog/" title="Face Recognition Scanner" class="w-full h-[420px] border-0"></iframe>
-              </div>
-            </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+          <div class="bg-brand-50 dark:bg-brand-500/10 rounded-xl p-4">
+            <p id="mon-stat-total" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100">0</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Scans Today</p>
           </div>
+          <div class="bg-emerald-50 dark:bg-emerald-500/10 rounded-xl p-4">
+            <p id="mon-stat-verified" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100">0</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Verified Matches</p>
+          </div>
+          <div class="bg-gold-400/10 rounded-xl p-4">
+            <p id="mon-stat-avgmatch" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100">0%</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Avg. Match Confidence</p>
+          </div>
+          <div class="bg-red-50 dark:bg-red-500/10 rounded-xl p-4">
+            <p id="mon-stat-flagged" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100">0</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Low-Confidence Scans</p>
+          </div>
+        </div>
 
-          <!-- RIGHT: results sidebar -->
-          <aside class="lg:col-span-1">
-            <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-4 lg:sticky lg:top-4">
-              <div class="flex items-center justify-between mb-3">
-                <h3 class="font-bold text-slate-800 dark:text-slate-100 text-sm">Scan Results</h3>
-                <button id="scan-results-clear" class="text-[11px] font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">Clear</button>
-              </div>
-              <ul id="scan-results-list" class="space-y-2 max-h-[560px] overflow-y-auto scrollbar-thin">
-                <li id="scan-results-empty" class="text-xs text-slate-400 text-center py-8">No scans yet. Point a QR code at the camera to begin.</li>
-              </ul>
-            </div>
-          </aside>
+        <div id="monitoring-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <p class="col-span-full text-sm text-slate-400 text-center py-10">Loading scan records…</p>
         </div>
       </section>
-
-      <!-- Scan-again popup (after Face Recognition finishes) -->
-      <div id="scan-again-overlay" class="hidden fixed inset-0 z-40 bg-slate-900/40 flex items-center justify-center p-4">
-        <div class="bg-white dark:bg-ink-700 rounded-2xl shadow-xl w-full max-w-sm fade-in">
-          <div class="px-6 py-5 text-center">
-            <div class="w-12 h-12 mx-auto rounded-full bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-400 flex items-center justify-center mb-3">
-              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-            </div>
-            <h3 class="font-bold text-slate-800 dark:text-slate-100">Verification complete</h3>
-            <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">The result was added to the sidebar. Ready to scan a new QR code?</p>
-          </div>
-          <div class="flex justify-end gap-2 px-6 pb-5">
-            <button id="scan-again-close" class="text-sm font-semibold text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition">Close</button>
-            <button id="scan-again-confirm" class="text-sm font-semibold text-white bg-brand-600 px-4 py-2 rounded-lg hover:bg-brand-700 transition">Scan another QR</button>
-          </div>
-        </div>
-      </div>
 
       <!-- ============ REGISTER EMPLOYEE PANEL ============ -->
       <section id="panel-register-employee" class="panel hidden">
@@ -408,45 +443,100 @@
         </div>
       </section>
 
+      <!-- ============ EMPLOYEE LIST PANEL ============ -->
+      <section id="panel-employee-list" class="panel hidden">
+        <div class="flex flex-wrap items-center gap-4 mb-6">
+          <div class="w-12 h-12 rounded-xl bg-violet-600 text-white flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h11"/><circle cx="19" cy="18" r="1.6"/></svg>
+          </div>
+          <div class="min-w-0">
+            <h2 class="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100">Employee List</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Lahat ng employee na nakapag-register — kasama ang buong info na na-encode sa Register Employee form.</p>
+          </div>
+          <div class="sm:ml-auto flex items-center gap-2">
+            <input id="employee-list-search" type="text" placeholder="Search name or QR ID..." class="text-sm border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+            <button id="btn-refresh-employee-list" class="text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-4 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.836 0a8.001 8.001 0 00-15.418-2M20 20v-5h-.582m-15.836 0a8.001 8.001 0 0015.418 2"/></svg>
+              Refresh
+            </button>
+          </div>
+          <button data-panel="dashboard" class="nav-item text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-4 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition">← Back to Dashboard</button>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+          <div class="bg-brand-50 dark:bg-brand-500/10 rounded-xl p-4">
+            <p id="emplist-stat-total" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100">0</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Total sa listahan</p>
+          </div>
+          <div class="bg-emerald-50 dark:bg-emerald-500/10 rounded-xl p-4">
+            <p id="emplist-stat-registered" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100">0</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Fully Registered (may QR/Face)</p>
+          </div>
+          <div class="bg-gold-400/10 rounded-xl p-4">
+            <p id="emplist-stat-quick" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100">0</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Quick-Added (walang QR pa)</p>
+          </div>
+        </div>
+
+        <div id="employee-list-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <p class="col-span-full text-sm text-slate-400 text-center py-10">Loading employees…</p>
+        </div>
+      </section>
+
     </main>
   </div>
 </div>
 
-<!-- Schedule Employee Modal -->
+<!-- Shift / Schedule Employee Modal (shared by both "Shift Employee" and
+     "Schedule Employee" buttons — the only difference is the mode label
+     and the "type" tag saved on the record). Both collect: Employee,
+     Drop Location, Date, Time In, Time Out. -->
 <div id="schedule-modal-overlay" class="hidden fixed inset-0 z-40 bg-slate-900/40 flex items-center justify-center p-4">
   <div class="bg-white dark:bg-ink-700 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto scrollbar-thin fade-in">
     <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/10">
-      <h3 class="font-bold text-slate-800 dark:text-slate-100">Schedule Employee</h3>
+      <h3 id="schedule-modal-title" class="font-bold text-slate-800 dark:text-slate-100">Schedule Employee</h3>
       <button id="schedule-modal-close" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none">&times;</button>
     </div>
     <form id="schedule-form" class="px-6 py-5 space-y-4">
+      <input type="hidden" id="schedule-mode" value="schedule" />
       <div>
-        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Employee</label>
-        <select id="schedule-employee-select" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"></select>
+        <label id="schedule-employee-label" class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Employee</label>
+        <select id="schedule-employee-select" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 font-mono"></select>
+      </div>
+      <div id="schedule-replacing-wrap" class="hidden">
+        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Replacing (kanino ipapalit)</label>
+        <select id="schedule-replacing-select" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 font-mono">
+          <option value="">— None / walang papalitan —</option>
+        </select>
+        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">Piliin kung sino ang orihinal na naka-duty na papalitan ng employee na ito.</p>
       </div>
       <div>
-        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Shift</label>
-        <select id="schedule-shift-select" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"></select>
-      </div>
-      <div id="new-shift-fields" class="space-y-3 hidden bg-slate-50 dark:bg-white/5 rounded-lg p-3">
-        <div>
-        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Select Employee for shifting</label>
-        <select id="schedule-employee-select" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40"></select>
-      </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Date</label>
-            <input id="new-shift-date" type="text" placeholder="e.g. May 15" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Time</label>
-            <input id="new-shift-time" type="text" placeholder="e.g. 10AM - 6PM" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
-          </div>
+        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Drop Location</label>
+        <div class="flex gap-2 mb-2">
+          <input id="schedule-location-search" type="text" placeholder="Search a place (e.g. Batangas Port)" class="flex-1 border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+          <button type="button" id="schedule-location-search-btn" class="text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 px-3 py-2 rounded-lg transition shrink-0">Search</button>
         </div>
+        <div id="schedule-location-map" class="w-full h-48 rounded-lg overflow-hidden border border-slate-200 dark:border-white/10"></div>
+        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">Click or drag the pin to drop the exact location.</p>
+        <p id="schedule-location-label" class="text-xs font-medium text-emerald-700 dark:text-emerald-300 mt-1">No location selected yet.</p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Date</label>
+          <input id="schedule-date" type="text" placeholder="e.g. May 15" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Time In</label>
+          <input id="schedule-time-in" type="text" placeholder="e.g. 6:00 AM" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Time Out</label>
+        <input id="schedule-time-out" type="text" placeholder="e.g. 2:00 PM" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40" />
       </div>
       <div class="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
         <button type="button" id="schedule-cancel-btn" class="text-sm font-semibold text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition">Cancel</button>
-        <button type="submit" class="text-sm font-semibold text-brand-900 bg-gold-400 px-4 py-2 rounded-lg hover:bg-gold-500 transition">Confirm Schedule</button>
+        <button type="submit" id="schedule-submit-btn" class="text-sm font-semibold text-brand-900 bg-gold-400 px-4 py-2 rounded-lg hover:bg-gold-500 transition">Confirm Schedule</button>
       </div>
     </form>
   </div>
@@ -462,7 +552,9 @@
     <form id="leave-form" class="px-6 py-5 space-y-4">
       <div>
         <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Employee name</label>
-        <input id="leave-name" type="text" placeholder="e.g. Maria Santos" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-400/40" />
+        <select id="leave-name" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-400/40 font-mono">
+          <option value="">Select an employee</option>
+        </select>
       </div>
       <div>
         <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Dates</label>
@@ -478,7 +570,17 @@
 
 <div id="toast-container" class="fixed bottom-4 right-4 left-4 sm:left-auto sm:bottom-6 sm:right-6 z-50 space-y-2"></div>
 
+
 <script>
+
+const FACE_API_BASE = window.location.origin;
+
+
+const MIN_ACCESS_SCORE_PERCENT = 54;
+
+
+const LOCATION_MATCH_WINDOW_MINUTES = 15;
+
 const subPanels = {
   'time-attendance': {
     title: 'Time and Attendance System',
@@ -530,6 +632,8 @@ const colorMap = {
 };
 
 let employeeRoster = [];
+let employeeRosterDetail = [];
+let employeeIdByName = new Map();
 let scheduleData = [];
 let leaveData = [];
 let notifications = [];
@@ -548,6 +652,27 @@ async function apiPost(url, body) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Request failed: ' + url);
   return data;
+}
+
+
+function applyEmployeesResponse(data) {
+  employeeRosterDetail = Array.isArray(data.roster) ? data.roster : [];
+  if (employeeRosterDetail.length) {
+    employeeRoster = employeeRosterDetail.map(e => e.name);
+  } else {
+   
+    employeeRoster = Array.isArray(data.employees) ? data.employees : [];
+  }
+  employeeIdByName = new Map(employeeRosterDetail.map(e => [e.name, e.employeeId]));
+}
+
+async function refreshEmployeeRoster() {
+  try {
+    const data = await apiGet('/api/employees');
+    applyEmployeesResponse(data);
+  } catch (e) {
+
+  }
 }
 
 async function refreshStats() {
@@ -648,9 +773,10 @@ function setActivePanel(key) {
 
   document.querySelectorAll('.nav-item[data-panel]').forEach(btn => {
     const isActive = btn.dataset.panel === key;
-    btn.classList.toggle('bg-brand-600', isActive);
+    btn.classList.toggle('bg-violet-600', isActive);
     btn.classList.toggle('font-semibold', isActive);
-    btn.classList.toggle('text-brand-50/90', !isActive);
+    btn.classList.toggle('text-white', isActive);
+    btn.classList.toggle('text-black/80', !isActive);
     btn.classList.toggle('hover:bg-white/10', !isActive);
   });
 
@@ -660,10 +786,12 @@ function setActivePanel(key) {
     renderDashboardWidgets();
     renderAnalyticsCards();
     renderDashboardAnalyticsGraph();
-  } else if (key === 'scanner') {
-    resetScannerFlow();
+  } else if (key === 'monitoring') {
+    loadMonitoring();
   } else if (key === 'register-employee') {
     loadRegisterFrame();
+  } else if (key === 'employee-list') {
+    loadEmployeeList();
   }
 
   if (!isDesktop()) closeMobileSidebar();
@@ -699,14 +827,17 @@ function renderSubPanel(key) {
   } else if (data.isScheduleTable) {
     bodyHtml = `
       <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm table-scroll">
-        <table class="w-full text-sm min-w-[560px]">
+        <table class="w-full text-sm min-w-[720px]">
           <thead class="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide">
             <tr>
-              <th class="text-left px-5 py-3 font-semibold">Shift</th>
+              <th class="text-left px-5 py-3 font-semibold">Type</th>
+              <th class="text-left px-5 py-3 font-semibold">Drop Location</th>
               <th class="text-left px-5 py-3 font-semibold">Date</th>
-              <th class="text-left px-5 py-3 font-semibold">Time</th>
+              <th class="text-left px-5 py-3 font-semibold">Time In</th>
+              <th class="text-left px-5 py-3 font-semibold">Time Out</th>
               <th class="text-left px-5 py-3 font-semibold">Employee QR ID</th>
               <th class="text-left px-5 py-3 font-semibold">Full Name</th>
+              <th class="text-left px-5 py-3 font-semibold">Replacing</th>
             </tr>
           </thead>
           <tbody id="full-schedule-tbody" class="divide-y divide-slate-100 dark:divide-white/10"></tbody>
@@ -753,7 +884,11 @@ function renderSubPanel(key) {
         <p class="text-sm text-slate-500 dark:text-slate-400">${data.subtitle}</p>
       </div>
       ${data.isScheduleTable ? `
-      <button id="btn-schedule-employee" class="text-sm font-semibold text-white ${c.solid} px-4 py-2 rounded-lg hover:opacity-90 transition sm:ml-auto flex items-center gap-1.5">
+      <button id="btn-shift-employee" class="text-sm font-semibold text-white ${c.solid} px-4 py-2 rounded-lg hover:opacity-90 transition sm:ml-auto flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12M8 7l4-4M8 7l4 4M16 17H4M16 17l-4 4M16 17l-4-4"/></svg>
+        Shift Employee
+      </button>
+      <button id="btn-schedule-employee" class="text-sm font-semibold text-white ${c.solid} px-4 py-2 rounded-lg hover:opacity-90 transition flex items-center gap-1.5">
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14"/></svg>
         Schedule Employee
       </button>
@@ -784,7 +919,8 @@ function renderSubPanel(key) {
   }
   if (data.isScheduleTable) {
     renderFullScheduleTable();
-    document.getElementById('btn-schedule-employee').addEventListener('click', openScheduleModal);
+    document.getElementById('btn-schedule-employee').addEventListener('click', () => openScheduleModal('schedule'));
+    document.getElementById('btn-shift-employee').addEventListener('click', () => openScheduleModal('shift'));
   }
   if (data.isAnalyticsChart) {
     renderAnalyticsDetail();
@@ -792,62 +928,211 @@ function renderSubPanel(key) {
   attachDynamicListeners();
 }
 
+function splitLegacyTime(timeStr) {
+  if (!timeStr) return ['', ''];
+  const parts = String(timeStr).split(/\s*-\s*|\s+to\s+/i);
+  if (parts.length >= 2) return [parts[0].trim(), parts.slice(1).join(' - ').trim()];
+  return [timeStr, ''];
+}
+
 function renderFullScheduleTable() {
   const tbody = document.getElementById('full-schedule-tbody');
   if (!tbody) return;
   const rows = [];
   scheduleData.forEach((s) => {
+    const [legacyIn, legacyOut] = splitLegacyTime(s.time);
+    const timeIn = s.timeIn || legacyIn;
+    const timeOut = s.timeOut || legacyOut;
+    const type = s.type === 'shift' ? 'Shift' : 'Schedule';
+    const typeColor = s.type === 'shift' ? 'text-violet-600 bg-violet-50 dark:bg-violet-500/10' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10';
+    const location = s.location || '<span class="text-slate-400">—</span>';
     const emps = s.employees && s.employees.length ? s.employees : [null];
+    const replacingName = s.replacingEmployee || (s.replacing && (typeof s.replacing === 'string' ? s.replacing : s.replacing.name)) || '';
+    const replacingQrId = s.replacingEmployeeQrId || (replacingName ? employeeQrId(replacingName) : '');
     emps.forEach((emp, idx) => {
       const fullName = emp ? (typeof emp === 'string' ? emp : (emp.name || emp.fullName || '')) : '';
-      const qrId = emp && typeof emp === 'object' ? (emp.qrId || emp.employeeId || emp.id || '') : employeeQrId(fullName);
+     
+      const qrId = (idx === 0 && s.employeeQrId)
+        ? s.employeeQrId
+        : (emp && typeof emp === 'object' ? (emp.qrId || emp.employeeId || emp.id || '') : employeeQrId(fullName));
+      const replacingCell = idx !== 0
+        ? ''
+        : (s.type === 'shift'
+            ? (replacingName
+                ? `${replacingName} <span class="font-mono text-[11px] text-slate-400">(${replacingQrId})</span>`
+                : '<span class="text-slate-400 text-xs">No replacement noted</span>')
+            : '<span class="text-slate-300 dark:text-white/20">—</span>');
       rows.push(`
         <tr class="hover:bg-slate-50 dark:hover:bg-white/5 align-top">
-          <td class="px-5 py-3 font-medium text-slate-800 dark:text-slate-100">${idx === 0 ? s.shiftName : ''}</td>
+          <td class="px-5 py-3">${idx === 0 ? `<span class="text-xs font-semibold px-2 py-1 rounded-full ${typeColor}">${type}</span>` : ''}</td>
+          <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${idx === 0 ? location : ''}</td>
           <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${idx === 0 ? s.date : ''}</td>
-          <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${idx === 0 ? s.time : ''}</td>
+          <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${idx === 0 ? (timeIn || '—') : ''}</td>
+          <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${idx === 0 ? (timeOut || '—') : ''}</td>
           <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap font-mono text-xs">${qrId || '<span class="text-slate-400">—</span>'}</td>
           <td class="px-5 py-3 text-slate-700 dark:text-slate-200 whitespace-nowrap">${fullName || '<span class="text-slate-400 text-xs">No employees yet</span>'}</td>
+          <td class="px-5 py-3 text-slate-700 dark:text-slate-200 whitespace-nowrap">${replacingCell}</td>
         </tr>`);
     });
   });
   tbody.innerHTML = rows.join('');
 }
 
+
 function employeeQrId(name) {
   if (!name) return '';
-  // Deterministic display-only QR ID derived from the employee name
-  // (backend can override by providing employees as objects with qrId).
+  if (employeeIdByName.has(name)) {
+    return employeeIdByName.get(name);
+  }
   const slug = String(name).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 6);
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return `EMP-${slug}-${(h % 9000 + 1000)}`;
 }
 
-function openScheduleModal() {
+// ==========================================
+// SCHEDULE / SHIFT MODAL — interactive Drop Location map (Leaflet + OSM
+// tiles, Nominatim for search/reverse-geocoding — no API key needed).
+// ==========================================
+let scheduleLocationMap = null;
+let scheduleLocationMarker = null;
+let scheduleLocationSelected = null; 
+const SCHEDULE_MAP_DEFAULT_CENTER = [12.8797, 121.7740]; 
+const SCHEDULE_MAP_DEFAULT_ZOOM = 6;
+
+function ensureScheduleLocationMap() {
+  if (scheduleLocationMap) return scheduleLocationMap;
+  scheduleLocationMap = L.map('schedule-location-map').setView(SCHEDULE_MAP_DEFAULT_CENTER, SCHEDULE_MAP_DEFAULT_ZOOM);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(scheduleLocationMap);
+  scheduleLocationMap.on('click', (e) => setScheduleLocationPin(e.latlng.lat, e.latlng.lng));
+  return scheduleLocationMap;
+}
+
+function setScheduleLocationPin(lat, lng) {
+  const map = ensureScheduleLocationMap();
+  if (!scheduleLocationMarker) {
+    scheduleLocationMarker = L.marker([lat, lng], { draggable: true }).addTo(map);
+    scheduleLocationMarker.on('dragend', () => {
+      const pos = scheduleLocationMarker.getLatLng();
+      setScheduleLocationPin(pos.lat, pos.lng);
+    });
+  } else {
+    scheduleLocationMarker.setLatLng([lat, lng]);
+  }
+  scheduleLocationSelected = { lat, lng, address: null };
+  const label = document.getElementById('schedule-location-label');
+  label.textContent = `Selected: ${lat.toFixed(5)}, ${lng.toFixed(5)} — looking up address…`;
+
+  reverseGeocodeScheduleLocation(lat, lng);
+}
+
+async function reverseGeocodeScheduleLocation(lat, lng) {
+  const label = document.getElementById('schedule-location-label');
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+    const data = await res.json();
+    const address = data && data.display_name ? data.display_name : null;
+    if (scheduleLocationSelected && scheduleLocationSelected.lat === lat && scheduleLocationSelected.lng === lng) {
+      scheduleLocationSelected.address = address;
+      label.textContent = address
+        ? `${address} (${lat.toFixed(5)}, ${lng.toFixed(5)})`
+        : `Selected: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    }
+  } catch (e) {
+    if (scheduleLocationSelected && scheduleLocationSelected.lat === lat && scheduleLocationSelected.lng === lng) {
+      label.textContent = `Selected: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    }
+  }
+}
+
+async function searchScheduleLocation() {
+  const query = document.getElementById('schedule-location-search').value.trim();
+  if (!query) {
+    showToast('Type a place to search first.', 'error');
+    return;
+  }
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
+    const results = await res.json();
+    if (!results.length) {
+      showToast('No matching place found.', 'error');
+      return;
+    }
+    const { lat, lon } = results[0];
+    const map = ensureScheduleLocationMap();
+    map.setView([+lat, +lon], 16);
+    setScheduleLocationPin(+lat, +lon);
+  } catch (e) {
+    showToast('Location search failed. Check your connection.', 'error');
+  }
+}
+
+function resetScheduleLocationPicker() {
+  document.getElementById('schedule-location-search').value = '';
+  document.getElementById('schedule-location-label').textContent = 'No location selected yet.';
+  scheduleLocationSelected = null;
+  if (scheduleLocationMarker && scheduleLocationMap) {
+    scheduleLocationMap.removeLayer(scheduleLocationMarker);
+    scheduleLocationMarker = null;
+  }
+  if (scheduleLocationMap) {
+    scheduleLocationMap.setView(SCHEDULE_MAP_DEFAULT_CENTER, SCHEDULE_MAP_DEFAULT_ZOOM);
+  }
+}
+
+function openScheduleModal(mode) {
+  mode = mode === 'shift' ? 'shift' : 'schedule';
+  document.getElementById('schedule-mode').value = mode;
+  document.getElementById('schedule-modal-title').textContent = mode === 'shift' ? 'Shift Employee' : 'Schedule Employee';
+  document.getElementById('schedule-submit-btn').textContent = mode === 'shift' ? 'Confirm Shift' : 'Confirm Schedule';
+
+  const employeeLabel = document.getElementById('schedule-employee-label');
+  if (employeeLabel) {
+    employeeLabel.textContent = mode === 'shift' ? 'Employee to Shift' : 'Employee to Schedule';
+  }
+
+  const replacingWrap = document.getElementById('schedule-replacing-wrap');
+  if (replacingWrap) {
+    replacingWrap.classList.toggle('hidden', mode !== 'shift');
+  }
+
+  document.getElementById('schedule-form').reset();
+  resetScheduleLocationPicker();
   document.getElementById('schedule-modal-overlay').classList.remove('hidden');
+  refreshEmployeeRoster().then(refreshScheduleModalOptions);
   refreshScheduleModalOptions();
-  toggleNewShiftFields();
+
+  requestAnimationFrame(() => {
+    const map = ensureScheduleLocationMap();
+    setTimeout(() => map.invalidateSize(), 60);
+  });
+}
+
+
+function employeeOptionLabel(name) {
+  return `${name} — ${employeeQrId(name)}`;
 }
 
 function refreshScheduleModalOptions() {
   const select = document.getElementById('schedule-employee-select');
   select.innerHTML = employeeRoster.length
-    ? employeeRoster.map(name => `<option value="${name}">${name}</option>`).join('')
+    ? employeeRoster.map(name => `<option value="${name}">${employeeOptionLabel(name)}</option>`).join('')
     : `<option value="">Select an employee</option>`;
 
-  const shiftSelect = document.getElementById('schedule-shift-select');
-  shiftSelect.innerHTML = scheduleData.map(s => `<option value="${s.id}">${s.shiftName} — ${s.date}</option>`).join('') +
-    `<option value="new">+ Select a Shift for destination</option>`;
+  const replacingSelect = document.getElementById('schedule-replacing-select');
+  if (replacingSelect) {
+    const noneOption = `<option value="">— None / walang papalitan —</option>`;
+    replacingSelect.innerHTML = noneOption + (employeeRoster.length
+      ? employeeRoster.map(name => `<option value="${name}">${employeeOptionLabel(name)}</option>`).join('')
+      : '');
+  }
 }
 
 function closeScheduleModal() {
   document.getElementById('schedule-modal-overlay').classList.add('hidden');
-}
-
-function toggleNewShiftFields() {
-  const isNew = document.getElementById('schedule-shift-select').value === 'new';
-  document.getElementById('new-shift-fields').classList.toggle('hidden', !isNew);
 }
 
 async function handleQuickAddEmployee() {
@@ -859,7 +1144,7 @@ async function handleQuickAddEmployee() {
   }
   try {
     const data = await apiPost('/api/employees', { name });
-    employeeRoster = data.employees;
+    applyEmployeesResponse(data);
     input.value = '';
     refreshScheduleModalOptions();
     document.getElementById('schedule-employee-select').value = name;
@@ -872,31 +1157,53 @@ async function handleQuickAddEmployee() {
 
 async function submitScheduleForm(e) {
   e.preventDefault();
+  const mode = document.getElementById('schedule-mode').value === 'shift' ? 'shift' : 'schedule';
   const employee = document.getElementById('schedule-employee-select').value;
-  const shiftChoice = document.getElementById('schedule-shift-select').value;
+  const replacingSelect = document.getElementById('schedule-replacing-select');
+  const replacingEmployee = mode === 'shift' && replacingSelect ? replacingSelect.value : '';
+  const date = document.getElementById('schedule-date').value.trim();
+  const timeIn = document.getElementById('schedule-time-in').value.trim();
+  const timeOut = document.getElementById('schedule-time-out').value.trim();
 
   if (!employee) {
-    showToast('Add or select an employee first.', 'error');
+    showToast(mode === 'shift' ? 'Piliin muna kung sino ang ishishift.' : 'Add or select an employee first.', 'error');
+    return;
+  }
+  if (mode === 'shift' && replacingEmployee && replacingEmployee === employee) {
+    showToast('Hindi puwedeng sarili niya ang kapalit. Pumili ng ibang employee sa "Replacing".', 'error');
+    return;
+  }
+  if (!scheduleLocationSelected) {
+    showToast('I-click o i-drag ang pin sa mapa para itakda ang Drop Location.', 'error');
+    return;
+  }
+  if (!date || !timeIn || !timeOut) {
+    showToast('Please fill out date, time in and time out.', 'error');
     return;
   }
 
+  const location = scheduleLocationSelected.address
+    || `${scheduleLocationSelected.lat.toFixed(5)}, ${scheduleLocationSelected.lng.toFixed(5)}`;
+
+  const shiftName = `${mode === 'shift' ? 'Shift' : 'Schedule'} — ${location}`;
+  const time = `${timeIn} - ${timeOut}`;
+  const payload = {
+    shiftName, date, time, timeIn, timeOut, location, type: mode, employee,
+    employeeQrId: employeeQrId(employee),
+    replacingEmployee: replacingEmployee || null,
+    replacingEmployeeQrId: replacingEmployee ? employeeQrId(replacingEmployee) : null,
+    lat: scheduleLocationSelected.lat,
+    lng: scheduleLocationSelected.lng,
+  };
+
   try {
-    if (shiftChoice === 'new') {
-      const name = document.getElementById('new-shift-name').value.trim();
-      const date = document.getElementById('new-shift-date').value.trim();
-      const time = document.getElementById('new-shift-time').value.trim();
-      if (!name || !date || !time) {
-        showToast('Please fill out all new shift details.', 'error');
-        return;
-      }
-      const data = await apiPost('/api/schedules', { shiftName: name, date, time, employee });
-      scheduleData = data.schedules;
-      showToast(`${employee} scheduled for the new shift "${name}".`, 'success');
-    } else {
-      const data = await apiPost(`/api/schedules/${shiftChoice}/assign`, { employee });
-      scheduleData = data.schedules;
-      showToast(`${employee} scheduled for ${data.shift.shiftName}.`, 'success');
-    }
+    const data = await apiPost('/api/schedules', payload);
+    scheduleData = data.schedules;
+    showToast(mode === 'shift'
+      ? (replacingEmployee
+          ? `${employee} shifted to ${location} on ${date}, replacing ${replacingEmployee}.`
+          : `${employee} shifted to ${location} on ${date}.`)
+      : `${employee} scheduled for ${location} on ${date}.`, 'success');
     renderFullScheduleTable();
     renderDashboardWidgets();
     refreshStats();
@@ -907,7 +1214,18 @@ async function submitScheduleForm(e) {
   }
 }
 
+function refreshLeaveModalOptions() {
+  const select = document.getElementById('leave-name');
+  if (!select) return;
+  const placeholder = `<option value="">Select an employee</option>`;
+  select.innerHTML = placeholder + (employeeRoster.length
+    ? employeeRoster.map(name => `<option value="${name}">${employeeOptionLabel(name)}</option>`).join('')
+    : '');
+}
+
 function openLeaveModal() {
+  refreshEmployeeRoster().then(refreshLeaveModalOptions);
+  refreshLeaveModalOptions();
   document.getElementById('leave-modal-overlay').classList.remove('hidden');
 }
 function closeLeaveModal() {
@@ -919,11 +1237,11 @@ async function submitLeaveForm(e) {
   const name = document.getElementById('leave-name').value.trim();
   const dates = document.getElementById('leave-dates').value.trim();
   if (!name || !dates) {
-    showToast('Please fill out employee name and dates.', 'error');
+    showToast('Please select an employee and fill out dates.', 'error');
     return;
   }
   try {
-    const data = await apiPost('/api/leaves', { name, dates });
+    const data = await apiPost('/api/leaves', { name, dates, qrId: employeeQrId(name) });
     leaveData.push(data.leave);
     showToast(`Leave request submitted for ${name}.`, 'success');
     renderFullLeaveTable();
@@ -950,6 +1268,7 @@ function renderFullLeaveTable() {
       ? `<button class="approve-btn text-xs font-semibold text-emerald-600 hover:underline mr-3" data-id="${l.id}">Approve</button>
          <button class="decline-btn text-xs font-semibold text-red-600 hover:underline" data-id="${l.id}">Decline</button>`
       : `<span class="text-xs text-slate-400">No action</span>`;
+   
     const qrId = l.qrId || l.employeeId || employeeQrId(l.name);
     const processed = l.processedAt || l.processedOn || l.updatedAt || l.createdAt || '';
     const dayName = processed ? weekdayName(processed) : '—';
@@ -1137,7 +1456,7 @@ function renderAnalyticsDetailBody(a) {
     <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 mb-6">
       <h4 class="font-semibold text-sm text-slate-700 dark:text-slate-300 mb-3">Scans logged per day (last 7 days)</h4>
       ${barsSvg(a.weeklyTrend.map(d => d.checkins), a.weeklyTrend.map(d => d.day), '#5a9c3f')}
-      <p class="text-xs text-slate-400 mt-2">Each bar counts attendance records created via the Scanner (QR + Face Recognition) that day.</p>
+      <p class="text-xs text-slate-400 mt-2">Each bar counts attendance records created via Monitoring (QR + Face Recognition + Location) that day.</p>
     </div>
     <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm table-scroll">
       <table class="w-full text-sm min-w-[520px]">
@@ -1173,7 +1492,6 @@ function downloadAnalytics(kind) {
   const stamp = new Date().toISOString().slice(0, 10);
   let filename, content, mime;
   if (kind === 'ai') {
-    // AI-based / computed analytics with formulas + insights
     const insights = [];
     if (a.attendanceRate?.value < 80) insights.push('Attendance rate is below 80% — review absenteeism patterns.');
     if (a.onTimeRate?.value < 85) insights.push('On-time rate is trending low — consider shift-start reminders.');
@@ -1196,7 +1514,6 @@ function downloadAnalytics(kind) {
     content = JSON.stringify(payload, null, 2);
     mime = 'application/json';
   } else {
-    // Raw analytics only — CSV
     const rows = [
       ['Metric', 'Value', 'Formula'],
       ['Attendance Rate', a.attendanceRate.value + '%', a.attendanceRate.formula],
@@ -1230,7 +1547,7 @@ function renderDashboardAnalyticsGraph() {
   root.innerHTML = `
     <h4 class="font-semibold text-sm text-slate-700 dark:text-slate-300 mb-3">Scans logged per day (last 7 days)</h4>
     ${barsSvg(a.weeklyTrend.map(d => d.checkins), a.weeklyTrend.map(d => d.day), '#5a9c3f')}
-    <p class="text-xs text-slate-400 mt-2 mb-4">Each bar counts attendance records created via the Scanner (QR + Face Recognition) that day. This is the same live data used to compute every metric above.</p>
+    <p class="text-xs text-slate-400 mt-2 mb-4">Each bar counts attendance records created via Monitoring (QR + Face Recognition + Location) that day. This is the same live data used to compute every metric above.</p>
     <div class="bg-slate-50 dark:bg-white/5 rounded-xl table-scroll">
       <table class="w-full text-sm min-w-[520px]">
         <thead class="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide">
@@ -1247,142 +1564,337 @@ function renderDashboardAnalyticsGraph() {
   `;
 }
 
-/* =========================================================
-   Scanner panel — sequential flow: QR Code first, then Face
-   Recognition appears as a verification step after a
-   successful QR scan. Face iframe is now loaded with the
-   employee_id that came back from the QR verification, so
-   /facerecog?employee_id=... knows whose face to check.
-========================================================= */
-let scanResults = [];
 
-function addScanResult(entry) {
-  const now = new Date();
-  scanResults.unshift({
-    time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-    ...entry,
-  });
-  if (scanResults.length > 30) scanResults.length = 30;
-  renderScanResults();
+let employeeListSearchTerm = '';
+
+async function loadEmployeeList() {
+  const grid = document.getElementById('employee-list-grid');
+  if (grid) {
+    grid.innerHTML = `<p class="col-span-full text-sm text-slate-400 text-center py-10">Loading employees…</p>`;
+  }
+  await refreshEmployeeRoster();
+  renderEmployeeListStats();
+  renderEmployeeListGrid();
 }
 
-function renderScanResults() {
-  const list = document.getElementById('scan-results-list');
-  if (!list) return;
-  if (!scanResults.length) {
-    list.innerHTML = `<li id="scan-results-empty" class="text-xs text-slate-400 text-center py-8">No scans yet. Point a QR code at the camera to begin.</li>`;
+function renderEmployeeListStats() {
+  const total = employeeRosterDetail.length;
+  const registered = employeeRosterDetail.filter(e => e.source === 'registered').length;
+  const quick = employeeRosterDetail.filter(e => e.source !== 'registered').length;
+  const elTotal = document.getElementById('emplist-stat-total');
+  const elRegistered = document.getElementById('emplist-stat-registered');
+  const elQuick = document.getElementById('emplist-stat-quick');
+  if (elTotal) elTotal.textContent = String(total);
+  if (elRegistered) elRegistered.textContent = String(registered);
+  if (elQuick) elQuick.textContent = String(quick);
+}
+
+function renderEmployeeListGrid() {
+  const grid = document.getElementById('employee-list-grid');
+  if (!grid) return;
+
+  const term = employeeListSearchTerm.trim().toLowerCase();
+  let cards = employeeRosterDetail.slice().sort((a, b) => a.name.localeCompare(b.name));
+  if (term) {
+    cards = cards.filter(e =>
+      (e.name || '').toLowerCase().includes(term) ||
+      (e.employeeId || '').toLowerCase().includes(term)
+    );
+  }
+
+  if (!cards.length) {
+    grid.innerHTML = `<p class="col-span-full text-sm text-slate-400 text-center py-10">${employeeRosterDetail.length ? 'No employees match your search.' : 'No employees registered yet.'}</p>`;
     return;
   }
-  list.innerHTML = scanResults.map(r => {
-    const tone = r.kind === 'face'
-      ? 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/5'
-      : r.kind === 'error'
-        ? 'border-red-200 dark:border-red-500/30 bg-red-50/60 dark:bg-red-500/5'
-        : 'border-brand-200 dark:border-brand-500/30 bg-brand-50/60 dark:bg-brand-500/5';
-    const badge = r.kind === 'face' ? 'Face ✓' : r.kind === 'error' ? 'Error' : 'QR ✓';
-    const badgeCls = r.kind === 'face' ? 'bg-emerald-600' : r.kind === 'error' ? 'bg-red-600' : 'bg-brand-600';
+
+  grid.innerHTML = cards.map(e => {
+    const isRegistered = e.source === 'registered';
+    const statusCls = isRegistered
+      ? 'bg-emerald-600'
+      : 'bg-gold-500 text-brand-900';
+    const statusLabel = isRegistered ? 'Registered (QR + Face)' : 'Quick-Added';
+
+    const photo = e.photo
+      ? `<img src="${e.photo}" alt="${e.name || 'Employee'}" class="w-full h-full object-cover">`
+      : `<svg class="w-14 h-14 text-slate-300 dark:text-white/20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>`;
+
     return `
-      <li class="border ${tone} rounded-xl px-3 py-2">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] font-bold text-white ${badgeCls} px-2 py-0.5 rounded-full">${badge}</span>
-          <span class="text-[10px] text-slate-400">${r.time}</span>
+      <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden fade-in">
+        <div class="relative w-full aspect-square bg-slate-100 dark:bg-white/5 flex items-center justify-center overflow-hidden">
+          ${photo}
+          <span class="absolute top-2 right-2 text-[10px] font-bold text-white ${statusCls} px-2 py-0.5 rounded-full">${statusLabel}</span>
         </div>
-        <div class="mt-1 flex items-center gap-2">
-          ${r.photo ? `<img src="${r.photo}" class="w-10 h-10 rounded-lg object-cover shrink-0" alt="${r.name || 'Unknown'}">` : ''}
-          <div class="min-w-0">
-            <p class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${r.name || 'Unknown'}</p>
-            <p class="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">${r.qrId || '—'}</p>
+        <div class="p-3.5">
+          <p class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${e.name || '—'}</p>
+          <p class="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate mb-3">${e.employeeId || '—'}</p>
+
+          <div class="space-y-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+            <p class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h2.28a1 1 0 01.98.804l1.06 5.303a1 1 0 01-.502 1.06l-1.723.983a11 11 0 006.104 6.104l.983-1.723a1 1 0 011.06-.502l5.303 1.06a1 1 0 01.804.98V19a2 2 0 01-2 2h-1C9.163 21 3 14.837 3 7V6z"/></svg>
+              <span class="truncate">${e.contact || '—'}</span>
+            </p>
+            <p class="flex items-start gap-1.5">
+              <svg class="w-3.5 h-3.5 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><circle cx="12" cy="11" r="3"/></svg>
+              <span class="line-clamp-2">${e.address || '—'}</span>
+            </p>
+            <p class="flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path stroke-linecap="round" d="M3 9h18M8 3v3M16 3v3"/></svg>
+              <span>Hired ${e.dateHired || '—'}</span>
+            </p>
           </div>
         </div>
-        ${r.message ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">${r.message}</p>` : ''}
-      </li>`;
+      </div>`;
   }).join('');
 }
 
-function clearScanResults() {
-  scanResults = [];
-  renderScanResults();
+
+let monitoringLogs = [];
+let monitoringLocationCheckins = [];
+let monitoringStatusFilter = 'all';
+
+const monitoringCardStep = {};
+
+
+function normId(id) {
+  return String(id ?? '').trim().toLowerCase();
 }
 
-function resetScannerFlow() {
-  const qrStep = document.getElementById('qr-scanner-step');
-  const faceStep = document.getElementById('face-scanner-step');
-  const faceFrame = document.getElementById('face-scanner-frame');
-  const qrFrame = document.getElementById('qr-scanner-frame');
-  if (!qrStep || !faceStep) return;
-  qrStep.classList.remove('hidden');
-  faceStep.classList.add('hidden');
-  if (faceFrame) faceFrame.src = 'about:blank';
-  if (qrFrame) qrFrame.src = '/qrcodescanner/';
-  const overlay = document.getElementById('scan-again-overlay');
-  if (overlay) overlay.classList.add('hidden');
-  renderScanResults();
+async function loadMonitoring() {
+  const grid = document.getElementById('monitoring-grid');
+
+  if (grid) {
+    grid.innerHTML = `
+      <p class="col-span-full text-sm text-slate-400 text-center py-10">
+        Loading scan records…
+      </p>
+    `;
+  }
+
+  try {
+    const [scanData, locData] = await Promise.all([
+      apiGet(`${FACE_API_BASE}/deepfacerecog/api/scan-logs`),
+      apiGet('/api/location-checkins'),
+    ]);
+    monitoringLogs = scanData.logs || [];
+    monitoringLocationCheckins = locData.checkins || [];
+  } catch (e) {
+    monitoringLogs = [];
+    monitoringLocationCheckins = [];
+    showToast('Could not load scan records. Is the backend running on port 5001?', 'error');
+  }
+
+  renderMonitoringStats();
+  renderMonitoringGrid();
 }
 
-function onQrScanSuccess(employeeId, employeeName, photo) {
-  // Hide QR stage entirely, reveal Face stage, log result in sidebar.
-  const qrStep = document.getElementById('qr-scanner-step');
-  const faceStep = document.getElementById('face-scanner-step');
-  const faceFrame = document.getElementById('face-scanner-frame');
-  const qrFrame = document.getElementById('qr-scanner-frame');
-  if (!faceStep || !faceFrame) return;
+function renderMonitoringStats() {
+  const total = monitoringLogs.length;
 
-  if (qrStep) qrStep.classList.add('hidden');
-  if (qrFrame) qrFrame.src = 'about:blank';
-  faceStep.classList.remove('hidden');
 
-  const baseSrc = faceFrame.dataset.src || '/deepfacerecog';
-  faceFrame.src = employeeId
-    ? `${baseSrc}?employee_id=${encodeURIComponent(employeeId)}`
-    : baseSrc;
+  const verified = monitoringLogs.filter(l =>
+    (l.status || '').toLowerCase() === 'verified' && findMatchingLocationCheckin(l) !== null
+  ).length;
 
-  addScanResult({
-    kind: 'qr',
-    qrId: employeeId || '—',
-    name: employeeName || 'Unknown',
-    message: 'QR verified — awaiting face check.',
+  const avgMatch = total ? Math.round(monitoringLogs.reduce((sum, l) => sum + (Number(l.matchPercentage) || 0), 0) / total) : 0;
+  const flagged = monitoringLogs.filter(l => (Number(l.matchPercentage) || 0) < MIN_ACCESS_SCORE_PERCENT).length;
+
+  const elTotal = document.getElementById('mon-stat-total');
+  const elVerified = document.getElementById('mon-stat-verified');
+  const elAvg = document.getElementById('mon-stat-avgmatch');
+  const elFlagged = document.getElementById('mon-stat-flagged');
+  if (elTotal) elTotal.textContent = String(total);
+  if (elVerified) elVerified.textContent = String(verified);
+  if (elAvg) elAvg.textContent = `${avgMatch}%`;
+  if (elFlagged) elFlagged.textContent = String(flagged);
+}
+
+function formatScanTimestamp(ts) {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return { date: '—', time: '—' };
+  return {
+    date: d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+    time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+  };
+}
+
+function findMatchingLocationCheckin(log) {
+  if (!log.qrId || !log.timestamp) return null;
+  const scanTime = new Date(log.timestamp).getTime();
+  if (isNaN(scanTime)) return null;
+
+  const windowMs = LOCATION_MATCH_WINDOW_MINUTES * 60 * 1000;
+  const logId = normId(log.qrId);
+
+  const candidates = monitoringLocationCheckins.filter(c => {
+    if (normId(c.employee_id) !== logId) return false;
+    const checkinTime = new Date(c.timestamp).getTime();
+    if (isNaN(checkinTime)) return false;
+    return checkinTime >= (scanTime - windowMs) && checkinTime <= (scanTime + windowMs);
+  });
+
+  if (!candidates.length) return null;
+
+  return candidates.reduce((closest, c) => {
+    const cTime = new Date(c.timestamp).getTime();
+    const closestTime = new Date(closest.timestamp).getTime();
+    return Math.abs(cTime - scanTime) < Math.abs(closestTime - scanTime) ? c : closest;
   });
 }
 
-function onFaceScanSuccess(employeeId, employeeName, extra) {
-  // Hide face stage, log result, show popup to scan again.
-  const faceStep = document.getElementById('face-scanner-step');
-  const faceFrame = document.getElementById('face-scanner-frame');
-  if (faceStep) faceStep.classList.add('hidden');
-  if (faceFrame) faceFrame.src = 'about:blank';
 
-  addScanResult({
-    kind: 'face',
-    qrId: employeeId || '—',
-    name: employeeName || 'Unknown',
-    message: (extra && extra.message) || 'Face recognized successfully.',
-  });
-
-  const overlay = document.getElementById('scan-again-overlay');
-  if (overlay) overlay.classList.remove('hidden');
+function monitoringCardKey(log) {
+  return `${log.qrId || log.employeeId || log.name || 'unknown'}__${log.timestamp || ''}`;
 }
 
-function onFaceScanError(message, employeeId, employeeName) {
-  addScanResult({
-    kind: 'error',
-    qrId: employeeId || '—',
-    name: employeeName || 'Unknown',
-    message: message || 'Face recognition failed.',
-  });
-}
+function goToMonitoringStep(cardKey, step) {
+  monitoringCardStep[cardKey] = step;
+  const card = document.querySelector(`[data-card-key="${CSS.escape(cardKey)}"]`);
+  if (!card) return;
+  const photoEls = card.querySelectorAll('.mon-step-photo, .mon-step-photo-info');
+  const locationEls = card.querySelectorAll('.mon-step-location, .mon-step-location-info');
+  const dotPhoto = card.querySelector('.mon-dot-photo');
+  const dotLocation = card.querySelector('.mon-dot-location');
+  if (!photoEls.length || !locationEls.length) return;
 
-// Bridge for iframes that dispatch postMessage instead of calling directly.
-window.addEventListener('message', (event) => {
-  const d = event.data;
-  if (!d || typeof d !== 'object') return;
-  if (d.type === 'qr-scan-success') onQrScanSuccess(d.employeeId, d.employeeName, d.photo);
-  else if (d.type === 'face-scan-success') onFaceScanSuccess(d.employeeId, d.employeeName, d);
-  else if (d.type === 'face-scan-error') onFaceScanError(d.message, d.employeeId, d.employeeName);
-});
-window.onQrScanSuccess = onQrScanSuccess;
-window.onFaceScanSuccess = onFaceScanSuccess;
-window.onFaceScanError = onFaceScanError;
-window.resetScannerFlow = resetScannerFlow;
+  const showPhoto = step === 'photo';
+  photoEls.forEach(el => el.classList.toggle('hidden', !showPhoto));
+  locationEls.forEach(el => el.classList.toggle('hidden', showPhoto));
+  if (dotPhoto) dotPhoto.classList.toggle('bg-brand-500', showPhoto);
+  if (dotPhoto) dotPhoto.classList.toggle('bg-slate-200', !showPhoto);
+  if (dotPhoto) dotPhoto.classList.toggle('dark:bg-white/15', !showPhoto);
+  if (dotLocation) dotLocation.classList.toggle('bg-brand-500', !showPhoto);
+  if (dotLocation) dotLocation.classList.toggle('bg-slate-200', showPhoto);
+  if (dotLocation) dotLocation.classList.toggle('dark:bg-white/15', showPhoto);
+}
+window.goToMonitoringStep = goToMonitoringStep;
+
+function renderMonitoringGrid() {
+  const grid = document.getElementById('monitoring-grid');
+  if (!grid) return;
+
+  let logs = monitoringLogs.filter(l => findMatchingLocationCheckin(l) !== null);
+
+  if (monitoringStatusFilter === 'verified') {
+    logs = logs.filter(l => (l.status || '').toLowerCase() === 'verified');
+  } else if (monitoringStatusFilter === 'unverified') {
+    logs = logs.filter(l => (l.status || '').toLowerCase() !== 'verified');
+  }
+
+  if (!logs.length) {
+    grid.innerHTML = `<p class="col-span-full text-sm text-slate-400 text-center py-10">No fully completed check-ins yet (QR + Face + Location required).</p>`;
+    return;
+  }
+
+  grid.innerHTML = logs.map(l => {
+    const pct = Math.max(0, Math.min(100, Number(l.matchPercentage) || 0));
+    const isVerified = (l.status || '').toLowerCase() === 'verified';
+    const badgeCls = isVerified ? 'bg-emerald-600' : 'bg-red-600';
+    const badgeLabel = isVerified ? 'Verified' : 'Low Match';
+    const pctColor = pct >= 85 ? '#5a9c3f' : pct >= MIN_ACCESS_SCORE_PERCENT ? '#f4b942' : '#dc2626';
+    const { date, time } = formatScanTimestamp(l.timestamp);
+    const qrId = l.qrId || l.employeeId || employeeQrId(l.name);
+    const cardKey = monitoringCardKey(l);
+    const currentStep = monitoringCardStep[cardKey] || 'photo';
+    const onPhoto = currentStep === 'photo';
+
+    const photo = l.photo
+      ? `<img src="${l.photo}" alt="${l.name || 'Employee'}" class="w-full h-full object-cover">`
+      : `<svg class="w-10 h-10 text-slate-300 dark:text-white/20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>`;
+
+    const loc = findMatchingLocationCheckin(l);
+
+   
+    let mapEmbed;
+    if (loc) {
+      const lat = Number(loc.lat);
+      const lng = Number(loc.lng);
+      const delta = 0.0035; // laki ng bounding box paligid ng pin
+      const bbox = [lng - delta, lat - delta, lng + delta, lat + delta]
+        .map(v => v.toFixed(6)).join('%2C');
+      const marker = `${lat.toFixed(6)}%2C${lng.toFixed(6)}`;
+      const mapSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${marker}`;
+      mapEmbed = `<iframe src="${mapSrc}" class="w-full h-full border-0" loading="lazy" title="Check-in location for ${l.name || 'employee'}"></iframe>`;
+    } else {
+      mapEmbed = `
+        <div class="w-full h-full flex flex-col items-center justify-center gap-1.5">
+          <svg class="w-6 h-6 text-slate-300 dark:text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><circle cx="12" cy="11" r="3"/></svg>
+          <span class="text-[11px] text-slate-400">No location check-in yet</span>
+        </div>`;
+    }
+    const locCoordsLabel = loc
+      ? `${Number(loc.lat).toFixed(5)}, ${Number(loc.lng).toFixed(5)}${loc.accuracy ? ` &middot; ±${Math.round(loc.accuracy)}m` : ''}`
+      : '';
+
+    return `
+      <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden fade-in" data-card-key="${cardKey}">
+        <div class="relative w-full aspect-square bg-slate-100 dark:bg-white/5 flex items-center justify-center overflow-hidden">
+          <div class="mon-step-photo relative w-full h-full flex items-center justify-center ${onPhoto ? '' : 'hidden'}">
+            ${photo}
+            ${l.qrCodeImage ? `<img src="${l.qrCodeImage}" alt="QR" class="absolute bottom-2 left-2 w-12 h-12 sm:w-14 sm:h-14 bg-white rounded-md p-1 shadow-md border border-slate-200">` : ''}
+          </div>
+          <div class="mon-step-location w-full h-full ${onPhoto ? 'hidden' : ''}">${mapEmbed}</div>
+          <span class="absolute top-2 right-2 text-[10px] font-bold text-white ${badgeCls} px-2 py-0.5 rounded-full">${badgeLabel}</span>
+        </div>
+        <div class="p-3.5">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="flex-1 h-1.5 rounded-full bg-slate-100 dark:bg-white/10 overflow-hidden">
+              <div class="h-full rounded-full" style="width:${pct}%; background:${pctColor};"></div>
+            </div>
+            <span class="text-xs font-bold shrink-0" style="color:${pctColor};">${pct}%</span>
+          </div>
+
+          <!-- Step indicator: dalawang tuldok, isang beses lang isang step ang
+               ipinapakita sa isang pagkakataon; "Next"/"Back" ang tumatawid. -->
+          <div class="flex items-center justify-center gap-1.5 mb-3">
+            <span class="mon-dot-photo w-1.5 h-1.5 rounded-full ${onPhoto ? 'bg-brand-500' : 'bg-slate-200 dark:bg-white/15'}"></span>
+            <span class="mon-dot-location w-1.5 h-1.5 rounded-full ${!onPhoto ? 'bg-brand-500' : 'bg-slate-200 dark:bg-white/15'}"></span>
+          </div>
+
+          <!-- STEP 1: pangalan/ID lang (ang larawan mismo ay nasa itaas na) -->
+          <div class="mon-step-photo-info ${onPhoto ? '' : 'hidden'}">
+            <div class="flex items-center gap-1.5 mb-2">
+              <span class="w-5 h-5 rounded-full bg-slate-700 dark:bg-white/15 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+              <span class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Photo</span>
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${l.name || 'Unknown'}</p>
+              <p class="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">${qrId || '—'}</p>
+            </div>
+            <button type="button" onclick="goToMonitoringStep('${cardKey}','location')"
+              class="mt-3 w-full text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg py-2 flex items-center justify-center gap-1.5 transition">
+              Next: Location
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+
+          <!-- STEP 2: coordinates lang (ang mapa mismo ay nasa itaas na, pumalit sa larawan) -->
+          <div class="mon-step-location-info ${onPhoto ? 'hidden' : ''}">
+            <div class="flex items-center gap-1.5 mb-2">
+              <span class="w-5 h-5 rounded-full bg-slate-700 dark:bg-white/15 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+              <span class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Location</span>
+            </div>
+            <p class="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">${locCoordsLabel || '&nbsp;'}</p>
+            <button type="button" onclick="goToMonitoringStep('${cardKey}','photo')"
+              class="mt-3 w-full text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 rounded-lg py-2 flex items-center justify-center gap-1.5 transition">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+              Back: Photo
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-white/10 text-[11px] text-slate-500 dark:text-slate-400">
+            <span class="flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path stroke-linecap="round" d="M3 9h18M8 3v3M16 3v3"/></svg>
+              ${date}
+            </span>
+            <span class="flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/></svg>
+              ${time}
+            </span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
 
 function loadRegisterFrame() {
   const frame = document.getElementById('register-employee-frame');
@@ -1391,6 +1903,36 @@ function loadRegisterFrame() {
   }
 }
 window.loadRegisterFrame = loadRegisterFrame;
+
+
+window.addEventListener('message', (event) => {
+  const data = event.data;
+  if (!data || typeof data !== 'object') return;
+
+  if (data.type === 'face-scan-success') {
+    showToast(data.message || `${data.employeeName || 'Employee'} scanned successfully.`, 'success');
+    loadMonitoring();
+    refreshStats();
+  } else if (data.type === 'face-scan-error') {
+    showToast(data.message || 'Face scan failed or was denied.', 'error');
+  } else if (data.type === 'employee-registered') {
+    showToast(data.message || `${data.name || 'Employee'} registered successfully.`, 'success');
+    refreshEmployeeRoster().then(() => {
+      refreshStats();
+  
+      const scheduleSelect = document.getElementById('schedule-employee-select');
+      if (scheduleSelect) refreshScheduleModalOptions();
+      const leaveSelect = document.getElementById('leave-name');
+      if (leaveSelect) refreshLeaveModalOptions();
+    
+      const employeeListPanel = document.getElementById('panel-employee-list');
+      if (employeeListPanel && !employeeListPanel.classList.contains('hidden')) {
+        renderEmployeeListStats();
+        renderEmployeeListGrid();
+      }
+    });
+  }
+});
 
 function drawTrendChart() {
   const points = [80, 95, 88, 105, 100, 130, 90];
@@ -1446,7 +1988,7 @@ async function loadInitialData() {
       apiGet('/api/leaves'),
       apiGet('/api/notifications'),
     ]);
-    employeeRoster = emp.employees;
+    applyEmployeesResponse(emp);
     scheduleData = sched.schedules;
     leaveData = lv.leaves;
     notifications = notif.notifications;
@@ -1531,9 +2073,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('schedule-modal-close').addEventListener('click', closeScheduleModal);
   document.getElementById('schedule-cancel-btn').addEventListener('click', closeScheduleModal);
-  document.getElementById('schedule-shift-select').addEventListener('change', toggleNewShiftFields);
   document.getElementById('schedule-form').addEventListener('submit', submitScheduleForm);
-  document.getElementById('quick-add-employee-btn').addEventListener('click', handleQuickAddEmployee);
+  document.getElementById('schedule-location-search-btn').addEventListener('click', searchScheduleLocation);
+  document.getElementById('schedule-location-search').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); searchScheduleLocation(); }
+  });
+
+  
+  const quickAddBtn = document.getElementById('quick-add-employee-btn');
+  if (quickAddBtn) quickAddBtn.addEventListener('click', handleQuickAddEmployee);
+
   document.getElementById('schedule-modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'schedule-modal-overlay') closeScheduleModal();
   });
@@ -1545,17 +2094,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target.id === 'leave-modal-overlay') closeLeaveModal();
   });
 
-  document.getElementById('scanner-back-to-qr').addEventListener('click', resetScannerFlow);
+  const monRefreshBtn = document.getElementById('btn-refresh-monitoring');
+  if (monRefreshBtn) monRefreshBtn.addEventListener('click', loadMonitoring);
+  const monFilterSelect = document.getElementById('monitoring-filter-status');
+  if (monFilterSelect) monFilterSelect.addEventListener('change', () => {
+    monitoringStatusFilter = monFilterSelect.value;
+    renderMonitoringGrid();
+  });
 
-  const clearBtn = document.getElementById('scan-results-clear');
-  if (clearBtn) clearBtn.addEventListener('click', clearScanResults);
-  const scanAgainClose = document.getElementById('scan-again-close');
-  const scanAgainConfirm = document.getElementById('scan-again-confirm');
-  const scanAgainOverlay = document.getElementById('scan-again-overlay');
-  if (scanAgainClose) scanAgainClose.addEventListener('click', () => scanAgainOverlay.classList.add('hidden'));
-  if (scanAgainConfirm) scanAgainConfirm.addEventListener('click', resetScannerFlow);
-  if (scanAgainOverlay) scanAgainOverlay.addEventListener('click', (e) => {
-    if (e.target.id === 'scan-again-overlay') scanAgainOverlay.classList.add('hidden');
+  const empListRefreshBtn = document.getElementById('btn-refresh-employee-list');
+  if (empListRefreshBtn) empListRefreshBtn.addEventListener('click', loadEmployeeList);
+  const empListSearchInput = document.getElementById('employee-list-search');
+  if (empListSearchInput) empListSearchInput.addEventListener('input', () => {
+    employeeListSearchTerm = empListSearchInput.value;
+    renderEmployeeListGrid();
   });
 
   const searchInput = document.getElementById('search-input');
@@ -1565,6 +2117,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 });
+
 </script>
 </body>
 </html>

@@ -4,33 +4,8 @@ import base64
 import qrcode
 import uuid
 from io import BytesIO
-from pymongo import MongoClient
-from gridfs import GridFS
-from dotenv import load_dotenv
 
-load_dotenv()  
-
-MONGO_URI = os.environ.get("MONGO_URI")
-
-if not MONGO_URI:
-    raise RuntimeError(
-        "MONGO_URI is not set. Create a .env file (see .env.example) "
-        "with your MongoDB Atlas connection string."
-    )
-
-client = MongoClient(MONGO_URI)
-
-try:
-    client.admin.command("ping")
-    print("MongoDB Atlas Connected!")
-except Exception as e:
-    print("MongoDB Connection Error:", e)
-
-db = client["employee_db"]
-
-
-employees_collection = db["employees"]
-fs = GridFS(db, collection="face_photos")
+from api import client, db, employees_collection, fs
 
 qrcodescanner_bp = Blueprint("qrcodescanner_bp", __name__)
 

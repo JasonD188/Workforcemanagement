@@ -7,46 +7,77 @@
 <title>Face Registration</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
+<!-- Face detection (in-browser, tinyFaceDetector lang - mabilis, sapat na
+     para malaman kung may mukha bago mag-register). -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 
-<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center p-6">
+<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center p-4 sm:p-6">
 
-<h1 class="text-4xl font-bold mb-6">
+<h1 class="text-2xl sm:text-3xl md:text-4xl font-bold mb-6 text-center">
 Face Registration
 </h1>
 
-<div class="flex flex-row gap-8 items-start justify-center flex-wrap">
+<!-- Tatlong column na magkatabi sa lg+ screens: Video | Form | QR.
+     Sa mobile, mag-sstack pa rin pababa (kailangan talaga ng espasyo),
+     pero sa tablet/desktop hindi na kailangang mag-scroll pababa ng video
+     para lang makita/ma-type ang form - magkatabi na agad sila. -->
+<div class="w-full max-w-6xl flex flex-col lg:flex-row gap-6 lg:gap-8 items-start justify-center">
 
-<div class="flex flex-col items-center">
+<!-- COLUMN 1: Camera lang -->
+<div class="w-full lg:w-auto lg:shrink-0 max-w-md mx-auto lg:mx-0 flex flex-col items-center">
 
-<video
-id="video"
-autoplay
-playsinline
-class="w-96 rounded-xl border border-slate-700">
-</video>
+<div class="relative w-full lg:w-[360px]">
+  <video
+  id="video"
+  autoplay
+  playsinline
+  style="transform: scaleX(-1);"
+  class="w-full rounded-xl border border-slate-700">
+  </video>
+
+  <!-- Live face-detection badge, nasa ibabaw ng video -->
+  <div id="face-status-badge"
+       class="absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-semibold bg-slate-700 text-slate-300">
+    Loading face detection…
+  </div>
+
+  <!-- Low-light indicator - lalabas lang kapag na-detect na madilim ang
+       paligid at kasalukuyang gumagamit ng brightness enhancement. -->
+  <div id="lowlight-badge"
+       class="hidden absolute top-3 right-3 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500 text-black">
+    Low light — enhancing
+  </div>
+</div>
 
 <canvas id="canvas" class="hidden"></canvas>
 
-<div class="mt-5 flex flex-col gap-3 w-96">
+<p id="face-hint" class="mt-2 text-xs text-slate-400 text-center w-full lg:w-[360px]">
+  Naglo-load ng face detection model…
+</p>
+
+</div>
+
+<!-- COLUMN 2: Mga input fields + Save button, katabi ng video -->
+<div class="w-full lg:w-72 flex flex-col gap-3 mx-auto lg:mx-0">
 
 <input
 id="name"
 type="text"
 placeholder="Enter Name"
-class="px-4 py-2 rounded text-black">
+class="px-4 py-2 rounded text-black w-full">
 
 <input
 id="contact"
 type="text"
 placeholder="Enter Contact Number"
-class="px-4 py-2 rounded text-black">
+class="px-4 py-2 rounded text-black w-full">
 
 <input
 id="address"
 type="text"
 placeholder="Enter Address"
-class="px-4 py-2 rounded text-black">
+class="px-4 py-2 rounded text-black w-full">
 
 <label class="text-sm text-slate-300">
 Date Hired
@@ -55,33 +86,37 @@ Date Hired
 <input
 id="dateHired"
 type="date"
-class="px-4 py-2 rounded text-black">
+class="px-4 py-2 rounded text-black w-full">
 
 <button
+id="saveBtn"
 onclick="registerFace()"
-class="bg-green-600 px-4 py-2 rounded">
-Save Picture
+disabled
+class="bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:cursor-not-allowed px-4 py-2 rounded w-full transition">
+Loading face detection…
 </button>
 
+<!-- Result text ngayon ay nasa ilalim ng form (dati kasama ng QR box) -->
+<div
+id="result"
+class="mt-2 text-sm sm:text-base w-full break-words">
+Waiting...
 </div>
 
 </div>
 
-<div id="qrContainer" class="hidden flex flex-col items-center bg-slate-800 border border-slate-700 rounded-xl p-6 w-64">
+<!-- COLUMN 3: QR Code, hiwalay pa ring column sa gilid -->
+<div id="qrContainer" class="hidden flex-col items-center bg-slate-800 border border-slate-700 rounded-xl p-6 w-full lg:w-64 mx-auto lg:mx-0">
     <p class="mb-3 text-lg font-semibold">QR Code</p>
-    <img id="qrImage" class="w-48 h-48 bg-white p-2 rounded-xl" />
+    <img id="qrImage" class="w-40 h-40 sm:w-48 sm:h-48 bg-white p-2 rounded-xl" />
+
     <a
     id="qrDownload"
+    href="#"
     download="qrcode.png"
     class="mt-4 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white text-center w-full">
     Download QR Code
     </a>
-
-    <div
-    id="result"
-    class="mt-6 text-xl w-full">
-    Waiting...
-    </div>
 </div>
 
 </div>
@@ -91,13 +126,126 @@ Save Picture
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+const saveBtn = document.getElementById("saveBtn");
+const faceStatusBadge = document.getElementById("face-status-badge");
+const lowlightBadge = document.getElementById("lowlight-badge");
+const faceHint = document.getElementById("face-hint");
+
+const MODEL_URL = "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights";
+
+
+const DETECTOR_OPTIONS = new faceapi.TinyFaceDetectorOptions({
+    inputSize: 416,
+    scoreThreshold: 0.3
+});
+
+
+const DARK_THRESHOLD = 90;
+
+let modelsReady = false;
+let faceCurrentlyDetected = false;
+let detectionLoopHandle = null;
+
+
+const detectionCanvas = document.createElement("canvas");
+const detectionCtx = detectionCanvas.getContext("2d");
 
 navigator.mediaDevices.getUserMedia({
     video:true
 })
 .then(stream=>{
     video.srcObject = stream;
+})
+.catch(err => {
+    faceHint.textContent = "Hindi ma-access ang camera. Bigyan ng permission at i-reload ang page.";
+    faceStatusBadge.textContent = "No camera";
+    faceStatusBadge.className = "absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white";
 });
+
+async function loadFaceModels(){
+    try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        modelsReady = true;
+        faceHint.textContent = "Iharap ang mukha sa camera para ma-enable ang Save Picture.";
+        startDetectionLoop();
+    } catch (err) {
+        console.error("Could not load face detection models:", err);
+        faceHint.textContent = "Hindi ma-load ang face detection. I-check ang internet connection at i-reload.";
+        faceStatusBadge.textContent = "Detection unavailable";
+        faceStatusBadge.className = "absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white";
+    }
+}
+
+
+function computeBrightness(imageData){
+    const data = imageData.data;
+    let sum = 0;
+    let count = 0;
+    const stride = 16 * 4;
+    for (let i = 0; i < data.length; i += stride) {
+        sum += 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+        count++;
+    }
+    return count ? sum / count : 255;
+}
+function getDetectionFrame(){
+    detectionCanvas.width = video.videoWidth;
+    detectionCanvas.height = video.videoHeight;
+
+    detectionCtx.filter = "none";
+    detectionCtx.drawImage(video, 0, 0, detectionCanvas.width, detectionCanvas.height);
+
+    const imageData = detectionCtx.getImageData(0, 0, detectionCanvas.width, detectionCanvas.height);
+    const brightness = computeBrightness(imageData);
+
+    if (brightness < DARK_THRESHOLD) {
+      
+        const deficit = DARK_THRESHOLD - brightness; 
+        const boost = Math.min(2.6, 1 + deficit / 55);
+        detectionCtx.filter = `brightness(${boost.toFixed(2)}) contrast(1.2) saturate(1.1)`;
+        detectionCtx.drawImage(video, 0, 0, detectionCanvas.width, detectionCanvas.height);
+        detectionCtx.filter = "none";
+
+        lowlightBadge.classList.remove("hidden");
+    } else {
+        lowlightBadge.classList.add("hidden");
+    }
+
+    return detectionCanvas;
+}
+
+function updateFaceStatus(hasFace){
+    faceCurrentlyDetected = hasFace;
+
+    if(hasFace){
+        faceStatusBadge.textContent = "Face detected";
+        faceStatusBadge.className = "absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-semibold bg-green-600 text-white";
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save Picture";
+        faceHint.textContent = "Mukha ay nakikita — pwede nang i-save.";
+    } else {
+        faceStatusBadge.textContent = "No face detected";
+        faceStatusBadge.className = "absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-semibold bg-red-600 text-white";
+        saveBtn.disabled = true;
+        saveBtn.textContent = "No face detected";
+        faceHint.textContent = "Iharap nang tama ang mukha sa camera.";
+    }
+}
+
+
+function startDetectionLoop(){
+    if(detectionLoopHandle) return;
+    detectionLoopHandle = setInterval(async () => {
+        if(!modelsReady || video.readyState < 2) return;
+        try {
+            const frame = getDetectionFrame();
+            const detection = await faceapi.detectSingleFace(frame, DETECTOR_OPTIONS);
+            updateFaceStatus(!!detection);
+        } catch (err) {
+      
+        }
+    }, 600);
+}
 
 function capture(){
 
@@ -116,6 +264,26 @@ function capture(){
 }
 
 async function registerFace(){
+
+    if(!modelsReady){
+        alert("Naglo-load pa ang face detection. Maghintay lang saglit.");
+        return;
+    }
+
+    let detection;
+    try {
+        const frame = getDetectionFrame();
+        detection = await faceapi.detectSingleFace(frame, DETECTOR_OPTIONS);
+    } catch (err) {
+        alert("Hindi ma-verify ang mukha ngayon. Subukan ulit.");
+        return;
+    }
+
+    if(!detection){
+        updateFaceStatus(false);
+        alert("Walang nakitang mukha sa camera. Kung madilim ang paligid, subukang magdagdag ng ilaw o ilapit ang mukha sa camera, tapos subukan ulit.");
+        return;
+    }
 
     const name =
     document.getElementById("name").value.trim();
@@ -149,26 +317,35 @@ async function registerFace(){
         return;
     }
 
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving…";
+
     const image = capture();
 
-    const res = await fetch(
-        "/registerface/register",
-        {
-            method:"POST",
-            headers:{
-                "Content-Type":"application/json"
-            },
-            body:JSON.stringify({   
-                name,
-                contact,
-                address,
-                dateHired,
-                image
-            })
-        }
-    );
-
-    const data = await res.json();
+    let res, data;
+    try {
+        res = await fetch(
+            "/registerface/register",
+            {
+                method:"POST",
+                headers:{
+                    "Content-Type":"application/json"
+                },
+                body:JSON.stringify({
+                    name,
+                    contact,
+                    address,
+                    dateHired,
+                    image
+                })
+            }
+        );
+        data = await res.json();
+    } catch (err) {
+        alert("Nabigo ang pag-save. Subukan ulit.");
+        updateFaceStatus(faceCurrentlyDetected);
+        return;
+    }
 
     const existingBadge = data.is_existing
         ? `<span class="inline-block mt-1 px-2 py-1 text-xs font-semibold bg-yellow-500 text-black rounded">Existing Employee</span><br>`
@@ -177,7 +354,7 @@ async function registerFace(){
     document.getElementById("result").innerHTML = `
         ${data.message}<br>
         ${existingBadge}
-        <span class="text-base text-slate-300">
+        <span class="text-sm sm:text-base text-slate-300">
             Employee ID: ${data.employee_id} <br>
             Contact: ${data.contact} <br>
             Address: ${data.address} <br>
@@ -195,8 +372,27 @@ async function registerFace(){
         qrDownload.download = `${name}_qrcode.png`;
 
         qrContainer.classList.remove("hidden");
+        qrContainer.classList.add("flex");
+    }
+
+
+    updateFaceStatus(faceCurrentlyDetected);
+
+  
+    if(window.parent){
+        window.parent.postMessage({
+            type: "employee-registered",
+            name: data.name,
+            message: data.message
+        }, "*");
     }
 }
+
+video.addEventListener("loadedmetadata", () => {
+    if(!modelsReady){
+        loadFaceModels();
+    }
+});
 
 </script>
 
