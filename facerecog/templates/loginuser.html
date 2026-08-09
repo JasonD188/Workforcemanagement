@@ -137,7 +137,10 @@
 
   </div>
 
-<script>
+  <!-- CSRF helper — dapat naka-load bago ang login script sa ibaba, dahil
+       ginagamit ng login handler ang secureFetch() na mula dito. -->
+  <script src="{{ url_for('static', filename='csrf_helper.js') }}"></script>
+  <script>
 
   const form = document.getElementById('loginForm');
   const msg = document.getElementById('formMsg');
@@ -152,7 +155,12 @@
     msg.classList.add('text-slate-400');
 
     try {
-      const res = await fetch('/api/login', {
+      // PALITAN NA GAMIT ANG secureFetch — awtomatikong nagsasama ng CSRF
+      // token sa header. Dating plain fetch() ito na lagi nagre-resulta
+      // ng 400 (CSRF token missing) kahit tama ang credentials, dahil
+      // naka-enable na ang Flask-WTF CSRFProtect sa lahat ng POST
+      // endpoints kasama ang /api/login.
+      const res = await secureFetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employee_id, password })

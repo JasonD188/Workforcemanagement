@@ -265,6 +265,10 @@
   </div>
 </div>
 
+<!-- CSRF helper — dapat naka-load bago ang buong dashboard script sa ibaba,
+     dahil ginagamit ng handleLocationCapture() at ng logout handler ang
+     secureFetch()/resetCsrfToken() na mula dito. -->
+<script src="{{ url_for('static', filename='csrf_helper.js') }}"></script>
 <script>
 const isDesktop = () => window.matchMedia('(min-width: 768px)').matches;
 
@@ -394,7 +398,7 @@ window.onQrScanSuccess = function (employeeId, name, photo) {
 };
 
 
-const CHECKIN_URL = '/api/userback';
+const CHECKIN_URL = '/api/checkin';
 
 let locCoords = null;
 let locMap = null;
@@ -555,7 +559,11 @@ async function handleLocationCapture() {
   btnCapture.textContent = 'Submitting…';
 
   try {
-    const res = await fetch(CHECKIN_URL, {
+    // PALITAN NA GAMIT ANG secureFetch — awtomatikong nagsasama ng CSRF
+    // token sa header. Dating plain fetch() ito na mabe-block ng
+    // Flask-WTF CSRFProtect ngayong naka-enable na ito sa lahat ng POST
+    // endpoints kasama ang /api/checkin.
+    const res = await secureFetch(CHECKIN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -772,12 +780,14 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('#profile-dropdown [data-action="logout"]').addEventListener('click', async () => {
     profileDropdown.classList.add('hidden');
     try {
-      await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+      // PALITAN NA GAMIT ANG secureFetch, at i-reset ang cached CSRF token
+      // pagkatapos mag-logout (nawawalan ito ng bisa kasabay ng session).
+      await secureFetch('/api/logout', { method: 'POST' });
     } catch (err) {
       console.error('Logout request failed:', err);
     }
-
-    window.location.href = '/';
+    resetCsrfToken();
+    window.location.href = '/loginuser';
   });
 });
 </script>

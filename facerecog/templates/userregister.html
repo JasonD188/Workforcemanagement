@@ -144,7 +144,7 @@
 
       <p class="text-center text-xs text-slate-400 pt-1">
         Already have an account?
-        <a href="/" class="text-gold-600 font-semibold hover:underline">Sign in</a>
+        <a href="/loginuser" class="text-gold-600 font-semibold hover:underline">Sign in</a>
       </p>
     </form>
 
@@ -201,7 +201,11 @@
 
   </div>
 
-<script>
+  <!-- CSRF helper — dapat naka-load bago ang register script sa ibaba, dahil
+       ginagamit ng verifyForm at passwordForm handlers ang secureFetch()
+       na mula dito. -->
+  <script src="{{ url_for('static', filename='csrf_helper.js') }}"></script>
+  <script>
 
   const verifyForm = document.getElementById('verifyForm');
   const passwordForm = document.getElementById('passwordForm');
@@ -228,7 +232,10 @@
     setMsg(verifyMsg, 'Checking your Employee ID…', 'muted');
 
     try {
-      const res = await fetch('/api/verify-employee', {
+      // PALITAN NA GAMIT ANG secureFetch — awtomatikong nagsasama ng
+      // CSRF token sa header, kailangan na ngayong naka-enable ang
+      // Flask-WTF CSRFProtect sa lahat ng POST endpoints.
+      const res = await secureFetch('/api/verify-employee', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employee_id, email })
@@ -275,7 +282,8 @@
     setMsg(passwordMsg, 'Creating your account…', 'muted');
 
     try {
-      const res = await fetch('/api/register', {
+      // PALITAN NA GAMIT ANG secureFetch dito rin.
+      const res = await secureFetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -288,7 +296,10 @@
 
       if (res.ok && data.success) {
         setMsg(passwordMsg, 'Account created. Redirecting to sign in…', 'success');
-        setTimeout(() => { window.location.href = '/'; }, 1200);
+        // FIX: dating "/" (admin dashboard, role_required('admin')) — mali,
+        // dahil hindi ito ang sign-in page kundi ang protected admin route.
+        // Ang regular users ay dapat papuntang /loginuser.
+        setTimeout(() => { window.location.href = '/loginuser'; }, 1200);
       } else {
         setMsg(passwordMsg, data.error || 'Could not create account.', 'error');
       }

@@ -130,6 +130,7 @@ const saveBtn = document.getElementById("saveBtn");
 const faceStatusBadge = document.getElementById("face-status-badge");
 const lowlightBadge = document.getElementById("lowlight-badge");
 const faceHint = document.getElementById("face-hint");
+const resultDiv = document.getElementById("result");
 
 const MODEL_URL = "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights";
 
@@ -263,6 +264,14 @@ function capture(){
     return canvas.toDataURL("image/jpeg");
 }
 
+// Ipinakita nang malinaw sa "result" div ang isang error message, sa halip
+// na iwanan itong nakatutok sa "Waiting..." magpakailanman kapag may
+// naganap na problema (network error, o error response mula sa server).
+function showError(message){
+    resultDiv.innerHTML =
+        `<span class="text-red-400 font-semibold">${message}</span>`;
+}
+
 async function registerFace(){
 
     if(!modelsReady){
@@ -319,6 +328,7 @@ async function registerFace(){
 
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving…";
+    resultDiv.innerHTML = "Saving…";
 
     const image = capture();
 
@@ -340,9 +350,30 @@ async function registerFace(){
                 })
             }
         );
-        data = await res.json();
+
+        // Basahin muna ang body bilang text - kung hindi valid JSON ang
+        // sagot ng server (hal. HTML error page mula sa isang 500 error),
+        // gusto nating malaman kaagad kesa mag-throw agad ang res.json()
+        // at makulong ang UI sa "Waiting...".
+        const rawText = await res.text();
+        try {
+            data = JSON.parse(rawText);
+        } catch (parseErr) {
+            console.error("Non-JSON response from /registerface/register:", rawText);
+            throw new Error(
+                `Server error (HTTP ${res.status}). Hindi valid ang sagot ng server - ` +
+                `tingnan ang Flask console/log para sa tunay na error.`
+            );
+        }
+
+        if(!res.ok || data.success === false){
+            throw new Error(data.message || `Nabigo ang pag-save (HTTP ${res.status}).`);
+        }
     } catch (err) {
-        alert("Nabigo ang pag-save. Subukan ulit.");
+        console.error("Registration failed:", err);
+        showError(err.message || "Nabigo ang pag-save. Subukan ulit.");
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save Picture";
         updateFaceStatus(faceCurrentlyDetected);
         return;
     }
@@ -351,8 +382,8 @@ async function registerFace(){
         ? `<span class="inline-block mt-1 px-2 py-1 text-xs font-semibold bg-yellow-500 text-black rounded">Existing Employee</span><br>`
         : "";
 
-    document.getElementById("result").innerHTML = `
-        ${data.message}<br>
+    resultDiv.innerHTML = `
+        <span class="text-green-400 font-semibold">✓ ${data.message}</span><br>
         ${existingBadge}
         <span class="text-sm sm:text-base text-slate-300">
             Employee ID: ${data.employee_id} <br>

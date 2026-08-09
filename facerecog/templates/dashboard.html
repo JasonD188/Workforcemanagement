@@ -47,6 +47,10 @@
 <!-- Leaflet (interactive map for picking the Drop Location) -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- CSRF helper — dapat naka-load bago ang buong dashboard script sa ibaba,
+     dahil ginagamit ng apiPost/apiDelete/logout ang secureFetch/resetCsrfToken
+     na mula dito. Siguraduhing nasa static/ folder mo ang csrf_helper.js -->
+<script src="{{ url_for('static', filename='csrf_helper.js') }}"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   html, body { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
@@ -165,6 +169,11 @@
           <button data-panel="employee-list" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Employee List">
             <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h11"/><circle cx="19" cy="18" r="1.6"/></svg>
             <span class="text-left sidebar-label whitespace-nowrap">Employee List </span>
+          </button>
+
+          <button data-panel="delete-history" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-black/80 hover:bg-white/10 transition" title="Delete History">
+            <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/></svg>
+            <span class="text-left sidebar-label whitespace-nowrap">Delete History</span>
           </button>
         </nav>
 
@@ -483,6 +492,30 @@
         </div>
       </section>
 
+      <!-- ============ DELETE HISTORY PANEL ============ -->
+      <section id="panel-delete-history" class="panel hidden">
+        <div class="flex flex-wrap items-center gap-4 mb-6">
+          <div class="w-12 h-12 rounded-xl bg-red-600 text-white flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14zM10 11v6M14 11v6"/></svg>
+          </div>
+          <div class="min-w-0">
+            <h2 class="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100">Delete History</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Mga employee na na-delete — puwedeng i-restore anumang oras.</p>
+          </div>
+          <div class="sm:ml-auto flex items-center gap-2">
+            <button id="btn-refresh-delete-history" class="text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-4 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.836 0a8.001 8.001 0 00-15.418-2M20 20v-5h-.582m-15.836 0a8.001 8.001 0 0015.418 2"/></svg>
+              Refresh
+            </button>
+          </div>
+          <button data-panel="dashboard" class="nav-item text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 px-4 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition">← Back to Dashboard</button>
+        </div>
+
+        <div id="delete-history-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <p class="col-span-full text-sm text-slate-400 text-center py-10">Loading delete history…</p>
+        </div>
+      </section>
+
     </main>
   </div>
 </div>
@@ -643,12 +676,24 @@ async function apiGet(url) {
   if (!res.ok) throw new Error('Request failed: ' + url);
   return res.json();
 }
+
+// PALITAN NA GAMIT ANG secureFetch — awtomatikong nagsasama ng CSRF token
+// para sa POST/PUT/DELETE requests. Gumagamit tayo ng plain fetch() lang
+// dating dahil wala pang CSRF protection sa backend; ngayong meron na,
+// kailangang dumaan dito ang lahat ng mutating requests o ma-block sila
+// (403) ng Flask-WTF CSRFProtect.
 async function apiPost(url, body) {
-  const res = await fetch(url, {
+  const res = await secureFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body || {}),
   });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || 'Request failed: ' + url);
+  return data;
+}
+async function apiDelete(url) {
+  const res = await secureFetch(url, { method: 'DELETE' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || 'Request failed: ' + url);
   return data;
@@ -792,6 +837,8 @@ function setActivePanel(key) {
     loadRegisterFrame();
   } else if (key === 'employee-list') {
     loadEmployeeList();
+  } else if (key === 'delete-history') {
+    loadDeleteHistory();
   }
 
   if (!isDesktop()) closeMobileSidebar();
@@ -1618,10 +1665,21 @@ function renderEmployeeListGrid() {
       ? `<img src="${e.photo}" alt="${e.name || 'Employee'}" class="w-full h-full object-cover">`
       : `<svg class="w-14 h-14 text-slate-300 dark:text-white/20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>`;
 
+    // FIX: dati ay `e.photo ? '<button...delete...>' : ''` — nawawala ang
+    // delete button kapag walang photo (gaya ng employee na si Jason sa
+    // screenshot). Ngayon ay LAGING lumalabas ang delete button, may photo
+    // man o wala, dahil ang tinatanggal talaga dito ay ang buong employee
+    // record (soft delete), hindi lang ang photo.
+    const deletePhotoBtn = `<button type="button" class="btn-delete-photo absolute top-2 left-2 w-7 h-7 rounded-full bg-red-600/90 hover:bg-red-700 text-white flex items-center justify-center transition"
+           data-employee-id="${e.employeeId}" data-name="${(e.name || '').replace(/"/g, '&quot;')}" title="Delete employee">
+           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a2 2 0 002 2h6a2 2 0 002-2V7"/></svg>
+         </button>`;
+
     return `
       <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden fade-in">
         <div class="relative w-full aspect-square bg-slate-100 dark:bg-white/5 flex items-center justify-center overflow-hidden">
           ${photo}
+          ${deletePhotoBtn}
           <span class="absolute top-2 right-2 text-[10px] font-bold text-white ${statusCls} px-2 py-0.5 rounded-full">${statusLabel}</span>
         </div>
         <div class="p-3.5">
@@ -1645,6 +1703,125 @@ function renderEmployeeListGrid() {
         </div>
       </div>`;
   }).join('');
+}
+
+// Event delegation para sa "Delete Photo" button - hindi natin kailangang
+// mag-attach ng listener per-card kasi re-rendered ang buong grid tuwing
+// nagbabago ang data (innerHTML replace). Isang beses lang natin ito
+// ina-attach sa grid container mismo.
+function attachEmployeeListDelegatedEvents() {
+  const grid = document.getElementById('employee-list-grid');
+  if (!grid || grid.dataset.delegated) return;
+  grid.dataset.delegated = '1';
+  grid.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-delete-photo');
+    if (!btn) return;
+    deleteEmployeePhoto(btn.dataset.employeeId, btn.dataset.name);
+  });
+}
+async function deleteEmployeePhoto(employeeId, name) {
+  if (!employeeId) return;
+  const confirmed = window.confirm(
+    `Sigurado ka bang gusto mong tanggalin si ${name || 'employee na ito'}?\n\nMapupunta ito sa Delete History at puwede pa ring i-restore kung kailangan.`
+  );
+  if (!confirmed) return;
+ 
+  try {
+    // MALI - photo lang ito, hindi buong employee:
+    // await apiDelete(`/api/employees/${encodeURIComponent(employeeId)}/photo`);
+ 
+    // TAMA - ito na ang soft-delete endpoint na buong employee record ang ginagalaw:
+    await apiDelete(`/api/employees/${encodeURIComponent(employeeId)}`);
+ 
+    showToast(`${name || employeeId} ay inilipat sa Delete History.`, 'success');
+    await loadEmployeeList();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+
+// ==========================================
+// DELETE HISTORY — mga employee na na-archive/tinanggal, puwedeng i-restore.
+// ==========================================
+let deleteHistoryList = [];
+
+async function loadDeleteHistory() {
+  const grid = document.getElementById('delete-history-grid');
+  if (grid) {
+    grid.innerHTML = `<p class="col-span-full text-sm text-slate-400 text-center py-10">Loading delete history…</p>`;
+  }
+  try {
+    const data = await apiGet('/api/employees/deleted');
+    deleteHistoryList = data.deleted || [];
+  } catch (e) {
+    deleteHistoryList = [];
+    showToast('Could not load delete history.', 'error');
+  }
+  renderDeleteHistoryGrid();
+}
+
+function renderDeleteHistoryGrid() {
+  const grid = document.getElementById('delete-history-grid');
+  if (!grid) return;
+
+  if (!deleteHistoryList.length) {
+    grid.innerHTML = `<p class="col-span-full text-sm text-slate-400 text-center py-10">Walang na-delete na employee.</p>`;
+    return;
+  }
+
+  grid.innerHTML = deleteHistoryList.map(e => {
+    const deletedAt = e.deleted_at ? new Date(e.deleted_at).toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    }) : '—';
+    return `
+      <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden fade-in">
+        <div class="p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <div class="w-10 h-10 rounded-full bg-slate-100 dark:bg-white/10 flex items-center justify-center shrink-0">
+              <svg class="w-5 h-5 text-slate-400" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${e.name || '—'}</p>
+              <p class="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">${e.employee_id || '—'}</p>
+            </div>
+          </div>
+          <p class="text-[11px] text-red-600 dark:text-red-400 font-medium mb-3">Deleted ${deletedAt}${e.deleted_by ? ` by ${e.deleted_by}` : ''}</p>
+          <button type="button" class="btn-restore-employee w-full text-xs font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg py-2 flex items-center justify-center gap-1.5 transition"
+            data-employee-id="${e.employee_id}" data-name="${(e.name || '').replace(/"/g, '&quot;')}">
+            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.836 0a8.001 8.001 0 00-15.418-2M20 20v-5h-.582m-15.836 0a8.001 8.001 0 0015.418 2"/></svg>
+            Restore
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function restoreEmployee(employeeId, name) {
+  if (!employeeId) return;
+  const confirmed = window.confirm(`I-restore si ${name || employeeId}?`);
+  if (!confirmed) return;
+
+  try {
+    await apiPost(`/api/employees/${encodeURIComponent(employeeId)}/restore`);
+    showToast(`${name || employeeId} ay na-restore.`, 'success');
+    await loadDeleteHistory();
+    refreshEmployeeRoster();
+    refreshStats();
+  } catch (e) {
+    showToast(e.message, 'error');
+  }
+}
+
+function attachDeleteHistoryDelegatedEvents() {
+  const grid = document.getElementById('delete-history-grid');
+  if (!grid || grid.dataset.delegated) return;
+  grid.dataset.delegated = '1';
+  grid.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-restore-employee');
+    if (!btn) return;
+    restoreEmployee(btn.dataset.employeeId, btn.dataset.name);
+  });
 }
 
 
@@ -2008,6 +2185,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSidebar();
   drawTrendChart();
   attachDynamicListeners();
+  attachEmployeeListDelegatedEvents();
+  attachDeleteHistoryDelegatedEvents();
   await loadInitialData();
 
   document.getElementById('theme-toggle').addEventListener('click', () => {
@@ -2054,12 +2233,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     profileDropdown.classList.toggle('hidden');
     bellDropdown.classList.add('hidden');
   });
+
+  // -----------------------------------------------------------------
+  // LOGOUT — dating "toast lang, walang tunay na logout" na bug.
+  // Ngayon: tumatawag talaga sa /api/admin/logout (kaya na-clea-clear
+  // ang session sa server), ni-reset ang CSRF token cache (dahil
+  // nawawalan ng bisa ang lumang token pagkatapos mag-session.clear()),
+  // tapos saka nagre-redirect pabalik sa /loginadmin.
+  // -----------------------------------------------------------------
   document.querySelectorAll('.menu-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const action = btn.dataset.action;
       profileDropdown.classList.add('hidden');
       if (action === 'logout') {
         showToast('Logging out...', 'warn');
+        try {
+          await secureFetch('/api/admin/logout', { method: 'POST' });
+        } catch (err) {
+          console.error('Logout request failed:', err);
+        }
+        resetCsrfToken();
+        window.location.href = '/loginadmin';
       } else {
         showToast(`Opening ${btn.textContent.trim()}...`, 'info');
       }
@@ -2109,6 +2303,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     employeeListSearchTerm = empListSearchInput.value;
     renderEmployeeListGrid();
   });
+
+  const deleteHistoryRefreshBtn = document.getElementById('btn-refresh-delete-history');
+  if (deleteHistoryRefreshBtn) deleteHistoryRefreshBtn.addEventListener('click', loadDeleteHistory);
 
   const searchInput = document.getElementById('search-input');
   searchInput.addEventListener('keydown', (e) => {
