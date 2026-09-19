@@ -4,6 +4,7 @@ import base64
 import cv2
 import os
 import re
+import threading
 from datetime import timezone, timedelta
 
 from api_analytics.analytics_export import (
@@ -50,21 +51,19 @@ known_face_names = []
 known_face_employee_ids = []
 known_face_images = {}
 
+# Naka-set sa True kapag tapos na ang background loading ng faces.
+faces_ready = False
+
+
+def is_faces_ready():
+    return faces_ready
+
 
 def _list_all_storage_files():
     """
     Kinukuha ang LAHAT ng files sa Appwrite Storage bucket, hindi lang ang
-    unang page. Ang default na storage.list_files(bucket_id=bucket_id) na
-    WALANG explicit na queries/limit ay basta na lang nagbabalik ng UNANG
-    PAGE ng resulta (default limit ng Appwrite - karaniwan ay 25 files).
-    Dati, ito ang dahilan kung bakit permanenteng "walang registered face"
-    ang mga huling-huling naka-register na employees paglampas sa 25th
-    file sa buong bucket - hindi dahil sira ang litrato nila, kundi dahil
-    hindi na sila nakikita ng list_files() call mismo.
-
-    Ginagamit dito ang cursor-based pagination ng Appwrite (Query.limit +
-    Query.cursor_after) para tiyakin na LAHAT ng files, kahit ilan pa ito,
-    ay makukuha - hindi lang ang unang 25.
+    unang page. Gumagamit ng cursor-based pagination (Query.limit +
+    Query.cursor_after) para tiyakin na LAHAT ng files ay makukuha.
     """
     all_files = []
     last_id = None
@@ -94,19 +93,9 @@ def _list_all_storage_files():
 def _get_active_employee_ids():
     """
     Kinukuha DIREKTA mula sa Postgres ang set ng employee_id na HINDI
-    naka-mark na `is_deleted = true` - ito mismo ang parehong `is_deleted`
-    column na ginagamit ng delete_employee_photo() at restore_employee()
-    sa registerface_controller.py, kaya ito ang pinaka-maaasahang basehan
-    ng "nasa admin dashboard employee list pa" (hindi deleted).
-
-    Ginagamit ito bilang FILTER sa load_known_faces() sa halip na umasa
-    lamang sa load_employees() (mula sa api.py) - dahil hindi tiyak kung
-    ang function na 'yon ay talagang nag-e-exclude ng mga is_deleted=true
-    na records. Kung hindi ito ni-filter doon, ang mga litrato ng
-    na-delete na employees (na maaaring naiwan pa sa Appwrite Storage dahil
-    nabigo ang storage delete noong pag-delete) ay MAAARING MAKA-MATCH pa
-    rin sa scan_face() - mali dahil dapat lang ang mga ACTIVE na employees
-    sa admin dashboard ang puwedeng ma-match.
+    naka-mark na `is_deleted = true`. Ito ang ginagamit na FILTER sa
+    load_known_faces() para ang mga ACTIVE na employees lang ang
+    puwedeng ma-match sa face scanner.
     """
     conn = get_connection()
     try:
@@ -148,16 +137,8 @@ def enhance_low_light(bgr_image):
 def encode_single_face(rgb_image, num_jitters=REGISTER_NUM_JITTERS):
     """
     Ginagamit ito ng registration (register_employee sa
-    registerface_controller.py) AT ng load_known_faces() dito sa ibaba, sa
-    IISANG paraan lang, para consistent ang detection strictness sa buong
-    app. Dati, mas mahina/default lang ang face_recognition detection sa
-    registration path (walang upsampling), kaysa sa scan_face() na may
-    hog + upsample=2 na fallback pa sa upsample=3. Kaya may mga litratong
-    pumapasa sa browser-side na tinyFaceDetector (registerface.html) pero
-    nabibigo pala nang tahimik sa aktwal na face_recognition encoding step
-    - at dahil walang face_verified na ibinabalik dati sa response, laging
-    "✓ saved successfully" pa rin ang lumalabas sa user kahit hindi pa
-    talaga usable ang litrato para sa face scanner.
+    registerface_controller.py) AT ng load_known_faces() dito, sa IISANG
+    paraan lang, para consistent ang detection strictness sa buong app.
 
     Returns: (encoding_or_None, num_faces_found)
     """
@@ -254,18 +235,10 @@ def load_known_faces():
 
     print("Loading registered faces from Appwrite Storage...")
 
-    # Only faces belonging to employees that currently exist in PostgreSQL
-    # AT hindi naka-mark na is_deleted=true ang eligible na i-load/i-match.
-    # Ginagamit natin ang DALAWANG source dito:
-    #   1. current_employees (load_employees) - para sa contact/address/etc.
-    #      data na kailangan pa rin sa ibang parte ng module.
-    #   2. active_employee_ids (direktang query sa is_deleted column) - ang
-    #      TUNAY na basehan kung sino ang dapat pa ring puwedeng ma-match
-    #      sa face scanner, dahil ito mismo ang column na ginagamit ng
-    #      admin dashboard (list_deleted_employees, restore_employee, atbp).
-    #      Kung NULL ang ibinalik nito (nabigo ang query), babalik tayo sa
-    #      current_employees na lang bilang fallback - mas mabuti pang
-    #      may ma-load kaysa mag-crash, pero normal case ay dapat gumana ito.
+    # current_employees (load_employees) - para sa contact/address/etc.
+    # active_employee_ids (direktang query sa is_deleted column) - ang TUNAY
+    # na basehan kung sino ang dapat pa ring puwedeng ma-match. Kung nabigo
+    # ang query, babalik sa current_employees bilang fallback.
     current_employees = load_employees()
     active_employee_ids = _get_active_employee_ids()
     if active_employee_ids is None:
@@ -284,6 +257,11 @@ def load_known_faces():
             file_id = storage_file.id
             filename = storage_file.name or ""
 
+            # QR code images ang mga ito, hindi mukha - huwag nang
+            # i-download/i-encode para bumilis ang startup.
+            if "_qr_" in filename:
+                continue
+
             employee_id_from_file = None
             person_name = None
 
@@ -295,10 +273,8 @@ def load_known_faces():
             else:
                 person_name = base_name or "Unknown"
 
-            # Skip stale photos for employees no longer in PostgreSQL, OR
-            # na naka-mark bilang is_deleted=true (naka-delete na sa admin
-            # dashboard) - bago pa man gumawa ng anumang network download /
-            # decode / face-encoding work.
+            # Skip stale photos para sa employees na wala na sa PostgreSQL
+            # o naka-mark na is_deleted=true.
             if employee_id_from_file and employee_id_from_file not in active_employee_ids:
                 reason = (
                     "no longer exists in employees table"
@@ -338,12 +314,7 @@ def load_known_faces():
             new_encodings.append(encoding)
 
             # Gamitin ang TUNAY na pangalan mula sa Postgres employees.name
-            # column (kung available) sa halip na ang person_name na
-            # naka-parse lang mula sa filename (na maaaring random hex
-            # suffix mula sa uuid.uuid4().hex[:8] na ginagamit ng
-            # save_image_to_storage() - hindi tunay na pangalan ng tao,
-            # kaya kung ito lang ang gagamitin, lumalabas na "594eec33"
-            # bilang "pangalan" imbes na aktwal na pangalan ng empleyado.
+            # kung available, sa halip na ang naka-parse mula sa filename.
             real_info = current_employees.get(employee_id_from_file) if employee_id_from_file else None
             display_name = real_info.get("name") if real_info and real_info.get("name") else person_name
 
@@ -371,7 +342,20 @@ print(f"Loaded {len(_startup_employees)} employee record(s) from PostgreSQL")
 for _eid, _info in _startup_employees.items():
     print(f"  - id={_eid} name={_info.get('name')!r}")
 
-load_known_faces()
+
+def _load_faces_bg():
+    """Tumatakbo sa background thread para hindi ma-block ang startup ng app."""
+    global faces_ready
+    try:
+        load_known_faces()
+    except Exception as e:
+        print("Background face loading failed:", e)
+    finally:
+        faces_ready = True
+        print("Faces ready.")
+
+
+threading.Thread(target=_load_faces_bg, daemon=True).start()
 
 
 def best_match_per_employee(face_encoding):
@@ -389,11 +373,9 @@ def best_match_per_employee(face_encoding):
 def _has_location_checkin(scan_id, employee_id, verified_at):
     """
     Parehong batayan ito ng _is_fully_verified() sa api_controller.py:
-    isang scan ay itinuturing na kumpleto/fully verified (para sa Monitoring
-    AT Analytics) lamang kapag may matching row sa location_checkins —
-    alinman sa pamamagitan ng scan_id, o ng employee_id + time window
-    paikot sa verified_at. Kung wala, "hindi kumpleto" ang scan at hindi
-    dapat magpakita kahit saan.
+    isang scan ay fully verified lamang kapag may matching row sa
+    location_checkins - via scan_id, o employee_id + time window
+    paikot sa verified_at.
     """
     conn = get_connection()
     try:
@@ -585,12 +567,8 @@ class DeepFaceRecogController:
                     print(f"QR-matched employee verified: {name} "
                           f"(distance={own_distance:.4f}, score={score}%)")
                 elif own_distance is None:
-                    # This employee has no usable registered face encoding at
-                    # all (never registered, or their registration photo
-                    # failed encoding e.g. multiple faces / no face found).
-                    # There is nothing to compare the scan against for THIS
-                    # employee, so we must not report it as "looks like
-                    # someone else" - that conflates two different problems.
+                    # Walang usable registered face encoding ang employee na
+                    # ito, kaya walang mapaghahambingan ng scan.
                     qr_mismatch = True
                     print(f"QR MISMATCH (attendance blocked): expected={expected_employee_id} "
                           f"name={name} - no registered face on file for this employee_id.")
@@ -609,16 +587,8 @@ class DeepFaceRecogController:
                     belongs_to_someone_else = is_confident_other and (best_eid or best_key) != expected_employee_id
 
                     if belongs_to_someone_else:
-                        # Ang best_name dito ay galing sa filename parsing
-                        # (person_name mula sa load_known_faces) - HINDI ito
-                        # ang tunay na pangalan ng empleyado. Halimbawa,
-                        # dahil ang filename ay "{employee_id}_{random8hex}.jpg",
-                        # ang best_name ay maaaring lumabas na "594eec33" -
-                        # isang random hex suffix, hindi pangalan ng tao.
-                        # Kaya kailangang i-lookup ang TUNAY na pangalan mula
-                        # sa Postgres employees.name column gamit ang
-                        # employee_id, at 'yon ang ipapakita sa user - hindi
-                        # ang naka-parse na piraso ng filename.
+                        # I-lookup ang TUNAY na pangalan mula sa Postgres
+                        # gamit ang employee_id, hindi ang filename piece.
                         real_employee_records = load_employees()
                         real_info = real_employee_records.get(best_eid) if best_eid else None
                         display_best_name = real_info.get("name") if real_info else best_name
@@ -657,10 +627,6 @@ class DeepFaceRecogController:
                 )
 
                 if is_confident_match and is_unambiguous:
-                    # Parehong dahilan: i-lookup ang TUNAY na pangalan mula sa
-                    # Postgres gamit ang employee_id, sa halip na gamitin ang
-                    # best_name na galing sa filename parsing (posibleng
-                    # random hex suffix lang, hindi tunay na pangalan).
                     real_employee_records = load_employees()
                     real_info = real_employee_records.get(best_employee_id) if best_employee_id else None
                     name = real_info.get("name") if real_info else best_name
@@ -780,13 +746,10 @@ class DeepFaceRecogController:
     @staticmethod
     def get_scan_logs():
         """
-        Ipinapakita lang dito ang mga scan na FULLY VERIFIED — parehong
-        pumasa sa face-match score threshold AT may matching row sa
-        location_checkins (via _has_location_checkin, kaparehong
-        batayan ng _is_fully_verified() sa Analytics). Ito ang gumawa
-        dating hindi nag-uupdate ang stale na "status" column kaya
-        laging blangko ang Monitoring kahit may fully verified na sa
-        Analytics — ngayon parehong batayan na ang ginagamit ng dalawa.
+        Ipinapakita lang dito ang mga scan na FULLY VERIFIED - pumasa sa
+        face-match score threshold AT may matching row sa location_checkins
+        (via _has_location_checkin, kaparehong batayan ng
+        _is_fully_verified() sa Analytics).
         """
         logs = []
         cursor = fetch_recent_scans(200)
