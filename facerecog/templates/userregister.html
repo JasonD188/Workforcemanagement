@@ -50,6 +50,15 @@
     background: rgba(15, 27, 63, 0.35);
     z-index: -1;
   }
+
+  /* OTP input boxes */
+  .otp-box {
+    width: 44px;
+    height: 52px;
+    text-align: center;
+    font-size: 20px;
+    font-weight: 700;
+  }
 </style>
 </head>
 <body class="min-h-screen flex items-start sm:items-center justify-center p-0 sm:p-6">
@@ -94,13 +103,14 @@
 
     <hr class="border-slate-200 mx-8 mt-6" />
 
-    <!-- Step indicator -->
+    <!-- Step indicator (3 steps na ngayon) -->
     <div class="px-8 pt-6">
       <div class="flex items-center gap-2" id="stepBar">
         <div class="flex-1 h-1.5 rounded-full bg-navy-900" data-step-bar="1"></div>
         <div class="flex-1 h-1.5 rounded-full bg-slate-200" data-step-bar="2"></div>
+        <div class="flex-1 h-1.5 rounded-full bg-slate-200" data-step-bar="3"></div>
       </div>
-      <p class="text-xs text-slate-400 mt-2" id="stepLabel">Step 1 of 2 — Verify your Employee ID</p>
+      <p class="text-xs text-slate-400 mt-2" id="stepLabel">Step 1 of 3 — Verify your Employee ID</p>
     </div>
 
     <!-- STEP 1: Verify employee -->
@@ -134,6 +144,7 @@
       </div>
 
       <button
+        id="verifySubmitBtn"
         type="submit"
         class="w-full rounded-xl bg-navy-900 hover:bg-navy-800 active:bg-navy-950 transition-colors text-white font-bold py-3.5 text-[15px]"
       >
@@ -148,7 +159,39 @@
       </p>
     </form>
 
-    <!-- STEP 2: Set password (hidden until verified) -->
+    <!-- STEP 1.5: OTP verification (hidden until employee ID verified) -->
+    <form id="otpForm" class="hidden px-8 pt-4 pb-8 space-y-5">
+      <h2 class="text-lg font-bold text-navy-900">Verify your email</h2>
+      <p class="text-sm text-slate-500 -mt-3">
+        Nagpadala kami ng 6-digit code sa <span id="otpSentTo" class="font-semibold text-navy-900"></span>. I-type ang code sa baba.
+      </p>
+
+      <div class="flex justify-center gap-2" id="otpBoxes">
+        <input type="text" inputmode="numeric" maxlength="1" class="otp-box rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-navy-800/40 focus:border-navy-800" data-otp-index="0" />
+        <input type="text" inputmode="numeric" maxlength="1" class="otp-box rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-navy-800/40 focus:border-navy-800" data-otp-index="1" />
+        <input type="text" inputmode="numeric" maxlength="1" class="otp-box rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-navy-800/40 focus:border-navy-800" data-otp-index="2" />
+        <input type="text" inputmode="numeric" maxlength="1" class="otp-box rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-navy-800/40 focus:border-navy-800" data-otp-index="3" />
+        <input type="text" inputmode="numeric" maxlength="1" class="otp-box rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-navy-800/40 focus:border-navy-800" data-otp-index="4" />
+        <input type="text" inputmode="numeric" maxlength="1" class="otp-box rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-navy-800/40 focus:border-navy-800" data-otp-index="5" />
+      </div>
+
+      <button
+        id="otpSubmitBtn"
+        type="submit"
+        class="w-full rounded-xl bg-navy-900 hover:bg-navy-800 active:bg-navy-950 transition-colors text-white font-bold py-3.5 text-[15px]"
+      >
+        Verify Code
+      </button>
+
+      <div class="flex items-center justify-between text-xs">
+        <button type="button" id="otpBackBtn" class="font-semibold text-slate-400 hover:text-navy-900">&larr; Back</button>
+        <button type="button" id="otpResendBtn" class="font-semibold text-gold-600 hover:underline">Resend code</button>
+      </div>
+
+      <p id="otpMsg" class="text-center text-xs font-medium hidden"></p>
+    </form>
+
+    <!-- STEP 2: Set password (hidden until OTP verified) -->
     <form id="passwordForm" class="hidden px-8 pt-4 pb-8 space-y-5">
       <h2 class="text-lg font-bold text-navy-900">Set your password</h2>
       <p class="text-sm text-slate-500 -mt-3">
@@ -202,21 +245,32 @@
   </div>
 
   <!-- CSRF helper — dapat naka-load bago ang register script sa ibaba, dahil
-       ginagamit ng verifyForm at passwordForm handlers ang secureFetch()
-       na mula dito. -->
+       ginagamit ng verifyForm, otpForm, at passwordForm handlers ang
+       secureFetch() na mula dito. -->
   <script src="{{ url_for('static', filename='csrf_helper.js') }}"></script>
   <script>
 
   const verifyForm = document.getElementById('verifyForm');
+  const otpForm = document.getElementById('otpForm');
   const passwordForm = document.getElementById('passwordForm');
+
   const verifyMsg = document.getElementById('verifyMsg');
+  const otpMsg = document.getElementById('otpMsg');
   const passwordMsg = document.getElementById('passwordMsg');
+
   const verifiedName = document.getElementById('verifiedName');
+  const otpSentTo = document.getElementById('otpSentTo');
+
   const stepLabel = document.getElementById('stepLabel');
   const stepBars = document.querySelectorAll('[data-step-bar]');
 
+  const verifySubmitBtn = document.getElementById('verifySubmitBtn');
+  const otpSubmitBtn = document.getElementById('otpSubmitBtn');
+  const otpResendBtn = document.getElementById('otpResendBtn');
+
   let verifiedEmployeeId = '';
   let verifiedEmail = '';
+  let employeeDisplayName = '';
 
   function setMsg(el, text, type) {
     el.textContent = text;
@@ -224,17 +278,50 @@
     el.classList.add(type === 'error' ? 'text-red-600' : type === 'success' ? 'text-green-600' : 'text-slate-400');
   }
 
+  function goToStep(step) {
+    verifyForm.classList.add('hidden');
+    otpForm.classList.add('hidden');
+    passwordForm.classList.add('hidden');
+
+    stepBars.forEach((bar, i) => {
+      if (i < step) {
+        bar.classList.remove('bg-slate-200');
+        bar.classList.add('bg-navy-900');
+      } else {
+        bar.classList.add('bg-slate-200');
+        bar.classList.remove('bg-navy-900');
+      }
+    });
+
+    if (step === 1) {
+      verifyForm.classList.remove('hidden');
+      stepLabel.textContent = 'Step 1 of 3 — Verify your Employee ID';
+    } else if (step === 2) {
+      otpForm.classList.remove('hidden');
+      stepLabel.textContent = 'Step 2 of 3 — Verify your email';
+      otpMsg.classList.add('hidden');
+      clearOtpBoxes();
+      otpBoxes[0].focus();
+    } else if (step === 3) {
+      passwordForm.classList.remove('hidden');
+      stepLabel.textContent = 'Step 3 of 3 — Set your password';
+    }
+  }
+
+  // ---- STEP 1: Verify Employee ID + Email, triggers OTP send ----
   verifyForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const employee_id = document.getElementById('employeeId').value.trim();
     const email = document.getElementById('verifyEmail').value.trim();
 
     setMsg(verifyMsg, 'Checking your Employee ID…', 'muted');
+    verifySubmitBtn.disabled = true;
 
     try {
-      // PALITAN NA GAMIT ANG secureFetch — awtomatikong nagsasama ng
-      // CSRF token sa header, kailangan na ngayong naka-enable ang
-      // Flask-WTF CSRFProtect sa lahat ng POST endpoints.
+      // /api/verify-employee ngayon ay: (1) kinukumpirma ang employee_id +
+      // email, (2) gumagawa ng OTP, (3) ise-save sa employees table
+      // (otp_code, otp_expires_at), (4) ipapadala via email. Hindi pa
+      // dito nabibigyan ng access ang user - kailangan pa ng OTP step.
       const res = await secureFetch('/api/verify-employee', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -245,28 +332,124 @@
       if (res.ok && data.success) {
         verifiedEmployeeId = employee_id;
         verifiedEmail = email;
-        verifiedName.textContent = data.name || employee_id;
+        employeeDisplayName = data.name || employee_id;
+        verifiedName.textContent = employeeDisplayName;
+        otpSentTo.textContent = email;
 
-        verifyForm.classList.add('hidden');
-        passwordForm.classList.remove('hidden');
-        stepLabel.textContent = 'Step 2 of 2 — Set your password';
-        stepBars[1].classList.remove('bg-slate-200');
-        stepBars[1].classList.add('bg-navy-900');
+        goToStep(2);
       } else {
         setMsg(verifyMsg, data.error || 'Employee ID not found.', 'error');
       }
     } catch (err) {
       setMsg(verifyMsg, 'Could not reach the server.', 'error');
+    } finally {
+      verifySubmitBtn.disabled = false;
     }
   });
 
+  // ---- STEP 1.5: OTP boxes behavior (auto-advance, backspace, paste) ----
+  const otpBoxes = Array.from(document.querySelectorAll('#otpBoxes .otp-box'));
+
+  function clearOtpBoxes() {
+    otpBoxes.forEach(box => { box.value = ''; });
+  }
+
+  function getOtpValue() {
+    return otpBoxes.map(box => box.value).join('');
+  }
+
+  otpBoxes.forEach((box, idx) => {
+    box.addEventListener('input', () => {
+      box.value = box.value.replace(/[^0-9]/g, '').slice(0, 1);
+      if (box.value && idx < otpBoxes.length - 1) {
+        otpBoxes[idx + 1].focus();
+      }
+    });
+
+    box.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !box.value && idx > 0) {
+        otpBoxes[idx - 1].focus();
+      }
+    });
+
+    box.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const pasted = (e.clipboardData.getData('text') || '').replace(/[^0-9]/g, '').slice(0, otpBoxes.length);
+      pasted.split('').forEach((digit, i) => {
+        if (otpBoxes[i]) otpBoxes[i].value = digit;
+      });
+      const nextEmpty = otpBoxes.findIndex(b => !b.value);
+      (nextEmpty === -1 ? otpBoxes[otpBoxes.length - 1] : otpBoxes[nextEmpty]).focus();
+    });
+  });
+
+  document.getElementById('otpBackBtn').addEventListener('click', () => {
+    goToStep(1);
+  });
+
+  otpResendBtn.addEventListener('click', async () => {
+    setMsg(otpMsg, 'Sending a new code…', 'muted');
+    otpResendBtn.disabled = true;
+
+    try {
+      const res = await secureFetch('/api/resend-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_id: verifiedEmployeeId, email: verifiedEmail })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setMsg(otpMsg, 'A new code was sent to your email.', 'success');
+        clearOtpBoxes();
+        otpBoxes[0].focus();
+      } else {
+        setMsg(otpMsg, data.error || 'Could not resend code.', 'error');
+      }
+    } catch (err) {
+      setMsg(otpMsg, 'Could not reach the server.', 'error');
+    } finally {
+      otpResendBtn.disabled = false;
+    }
+  });
+
+  otpForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const otp = getOtpValue();
+
+    if (otp.length !== otpBoxes.length) {
+      setMsg(otpMsg, 'Enter the complete 6-digit code.', 'error');
+      return;
+    }
+
+    setMsg(otpMsg, 'Verifying code…', 'muted');
+    otpSubmitBtn.disabled = true;
+
+    try {
+      const res = await secureFetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_id: verifiedEmployeeId, email: verifiedEmail, otp, otp_code: otp })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        goToStep(3);
+      } else {
+        setMsg(otpMsg, data.error || 'Invalid or expired code.', 'error');
+        clearOtpBoxes();
+        otpBoxes[0].focus();
+      }
+    } catch (err) {
+      setMsg(otpMsg, 'Could not reach the server.', 'error');
+    } finally {
+      otpSubmitBtn.disabled = false;
+    }
+  });
+
+  // ---- STEP 3 (was Step 2): Set password ----
   document.getElementById('backBtn').addEventListener('click', () => {
-    passwordForm.classList.add('hidden');
-    verifyForm.classList.remove('hidden');
-    stepLabel.textContent = 'Step 1 of 2 — Verify your Employee ID';
-    stepBars[1].classList.add('bg-slate-200');
-    stepBars[1].classList.remove('bg-navy-900');
-    passwordMsg.classList.add('hidden');
+    goToStep(2);
   });
 
   passwordForm.addEventListener('submit', async (e) => {
@@ -282,7 +465,9 @@
     setMsg(passwordMsg, 'Creating your account…', 'muted');
 
     try {
-      // PALITAN NA GAMIT ANG secureFetch dito rin.
+      // /api/register ay dapat din mag-double-check sa backend na
+      // otp_verified = TRUE bago gumawa ng account (huwag lang umasa sa
+      // frontend flow - pwedeng i-bypass ng user ang mga hidden forms).
       const res = await secureFetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -296,9 +481,6 @@
 
       if (res.ok && data.success) {
         setMsg(passwordMsg, 'Account created. Redirecting to sign in…', 'success');
-        // FIX: dating "/" (admin dashboard, role_required('admin')) — mali,
-        // dahil hindi ito ang sign-in page kundi ang protected admin route.
-        // Ang regular users ay dapat papuntang /loginuser.
         setTimeout(() => { window.location.href = '/loginuser'; }, 1200);
       } else {
         setMsg(passwordMsg, data.error || 'Could not create account.', 'error');

@@ -1,4 +1,3 @@
-
 import base64
 import uuid
 from datetime import datetime
@@ -52,12 +51,29 @@ def _upload_image(b64_data, filename_prefix):
 
 
 def load_employees():
+    """
+    Kinukuha ang lahat ng ACTIVE (hindi is_deleted=true) na employees mula sa
+    Postgres. Dati, walang WHERE clause dito - kinukuha LAHAT ng records sa
+    employees table, kasama pa ang mga na-soft-delete na (is_deleted=true).
+    Dahil ang function na ito ang pinagmumulan ng employee info (pangalan,
+    contact, address) na ginagamit ng deepfacerecog_controller.py sa
+    face-matching, QR-mismatch messages, at pag-populate ng scan results -
+    kahit tama na ang asikaso ng load_known_faces() sa pag-e-exclude ng
+    deleted employees sa ENCODING list, ang mga NA-DELETE na employee ay
+    puwede pa ring lumabas bilang "matched"/"belongs to" sa mga mensahe,
+    dahil dito pa rin sila kinukuha. Idinagdag ang WHERE clause para
+    IISANG lugar na lang ang kailangang ayusin, at para ma-siguradong
+    lahat ng gumagamit ng load_employees() ay ACTIVE employees lang
+    (kagaya ng nakikita sa admin dashboard Employee List) ang makikita.
+    """
     employees = {}
     conn = get_connection()
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT employee_id, name, contact, address, date_hired FROM employees"
+            "SELECT employee_id, name, contact, address, date_hired "
+            "FROM employees "
+            "WHERE COALESCE(is_deleted, false) = false"
         )
         for row in cur.fetchall():
             eid, name, contact, address, date_hired = row

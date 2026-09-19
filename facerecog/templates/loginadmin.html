@@ -191,6 +191,19 @@
     margin-bottom:20px;
   }
 
+  #info-banner{
+    display:none;
+    align-items:center;
+    gap:8px;
+    background:rgba(74,222,128,0.08);
+    border:1px solid rgba(74,222,128,0.35);
+    color:var(--ok);
+    font-size:13px;
+    padding:10px 12px;
+    border-radius:8px;
+    margin-bottom:20px;
+  }
+
   .field{ margin-bottom:18px; }
 
   .field label{
@@ -229,6 +242,13 @@
   }
 
   .field-input input::placeholder{ color:#4B5563; }
+
+  .otp-input{
+    letter-spacing:0.5em;
+    font-family:'JetBrains Mono', monospace;
+    font-size:20px !important;
+    text-align:center;
+  }
 
   .toggle-visibility{
     background:none;
@@ -274,6 +294,21 @@
   .submit-btn:active{ transform: translateY(1px); }
   .submit-btn:disabled{ opacity:0.6; cursor:not-allowed; }
 
+  .link-btn{
+    width:100%;
+    margin-top:12px;
+    background:none;
+    border:none;
+    color:var(--text-muted);
+    font-size:12px;
+    font-family:'JetBrains Mono', monospace;
+    letter-spacing:0.04em;
+    cursor:pointer;
+    padding:6px;
+  }
+  .link-btn:hover{ color:var(--accent); }
+  .link-btn:disabled{ opacity:0.5; cursor:not-allowed; }
+
   .form-meta{
     margin-top:28px;
     text-align:center;
@@ -281,6 +316,24 @@
     color:var(--text-muted);
     font-family:'JetBrains Mono', monospace;
   }
+
+  .step-tracker{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin-bottom:24px;
+  }
+  .step-dot{
+    flex:1;
+    height:3px;
+    border-radius:2px;
+    background:var(--border);
+    transition: background 0.2s ease;
+  }
+  .step-dot.active{ background:var(--accent); }
+  .step-dot.done{ background:var(--ok); }
+
+  .hidden{ display:none !important; }
 </style>
 </head>
 <body>
@@ -330,11 +383,18 @@
   <div class="form-side">
     <div class="form-card">
       <div class="form-eyebrow">Restricted area</div>
-      <h1 class="form-title">Admin sign in</h1>
-      <p class="form-subtitle">This page is for administrators only. Use your admin Employee ID and password.</p>
+      <h1 class="form-title" id="form-title">Admin sign in</h1>
+      <p class="form-subtitle" id="form-subtitle">This page is for administrators only. Use your admin Employee ID and password.</p>
+
+      <div class="step-tracker">
+        <div class="step-dot" id="step-dot-1"></div>
+        <div class="step-dot" id="step-dot-2"></div>
+      </div>
 
       <div id="error-banner"></div>
+      <div id="info-banner"></div>
 
+      <!-- STEP 1: Credentials -->
       <form id="login-form" novalidate>
         <div class="field">
           <label for="employee_id">Admin Employee ID</label>
@@ -356,6 +416,21 @@
         <button type="submit" class="submit-btn" id="submit-btn">Sign in</button>
       </form>
 
+      <!-- STEP 2: Email OTP -->
+      <form id="otp-email-form" class="hidden" novalidate>
+        <div class="field">
+          <label for="otp_email">Enter the 6-digit code sent to your email</label>
+          <div class="field-input">
+            <input type="text" id="otp_email" name="otp_email" class="otp-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="000000" autocomplete="one-time-code" required>
+          </div>
+        </div>
+
+        <p class="field-hint">Valid for 5 minutes. Check your spam folder if you don't see it.</p>
+
+        <button type="submit" class="submit-btn" id="submit-btn-email-otp">Verify &amp; sign in</button>
+        <button type="button" class="link-btn" id="resend-email-otp">Resend code</button>
+      </form>
+
       <div class="form-meta">SESSION ENCRYPTED · TLS 1.3</div>
     </div>
   </div>
@@ -373,15 +448,51 @@
     }
 
     function showError(message){
+      hideInfo();
       const banner = document.getElementById('error-banner');
       banner.textContent = message;
       banner.style.display = 'flex';
     }
-
     function hideError(){
       document.getElementById('error-banner').style.display = 'none';
     }
+    function showInfo(message){
+      hideError();
+      const banner = document.getElementById('info-banner');
+      banner.textContent = message;
+      banner.style.display = 'flex';
+    }
+    function hideInfo(){
+      document.getElementById('info-banner').style.display = 'none';
+    }
 
+    function setStep(step){
+      // step: 1 = credentials, 2 = email otp
+      document.getElementById('login-form').classList.toggle('hidden', step !== 1);
+      document.getElementById('otp-email-form').classList.toggle('hidden', step !== 2);
+
+      const titles = {
+        1: ['Admin sign in', 'This page is for administrators only. Use your admin Employee ID and password.'],
+        2: ['Verify your email', 'We sent a 6-digit code to the admin email on file.'],
+      };
+      document.getElementById('form-title').textContent = titles[step][0];
+      document.getElementById('form-subtitle').textContent = titles[step][1];
+
+      ['step-dot-1', 'step-dot-2'].forEach((id, idx) => {
+        const dot = document.getElementById(id);
+        const dotStep = idx + 1;
+        dot.classList.remove('active', 'done');
+        if (dotStep < step) dot.classList.add('done');
+        else if (dotStep === step) dot.classList.add('active');
+      });
+
+      hideError();
+      hideInfo();
+
+      if (step === 2) document.getElementById('otp_email').focus();
+    }
+
+    // ---------------- STEP 1: credentials ----------------
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       hideError();
@@ -399,11 +510,6 @@
       submitBtn.textContent = 'Signing in…';
 
       try {
-        // PALITAN NA GAMIT ANG secureFetch — awtomatikong nagsasama ng
-        // CSRF token sa header. Dating plain fetch() ito na lagi
-        // nagre-resulta ng 400 (CSRF token missing) kahit tama ang
-        // credentials, dahil naka-enable na ang Flask-WTF CSRFProtect
-        // sa lahat ng POST endpoints kasama ang /api/admin/login.
         const res = await secureFetch('/api/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -419,14 +525,104 @@
           return;
         }
 
-        window.location.href = '/';
+        // Successful credentials — move to email OTP step
+        setStep(2);
+        showInfo(data.message || 'A verification code was sent to your email.');
 
       } catch (err) {
         showError('Could not reach the server. Please try again.');
+      } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Sign in';
       }
     });
+
+    // ---------------- STEP 2: email OTP ----------------
+    document.getElementById('otp-email-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideError();
+
+      const otp_code = document.getElementById('otp_email').value.trim();
+      const submitBtn = document.getElementById('submit-btn-email-otp');
+
+      if (!otp_code){
+        showError('Enter the 6-digit code sent to your email.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Verifying…';
+
+      try {
+        const res = await secureFetch('/api/admin/verify-otp-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ otp_code })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success){
+          showError(data.error || 'Invalid or expired code.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Verify & sign in';
+          return;
+        }
+
+        // Fully verified — redirect to wherever the backend says the dashboard is
+        window.location.href = data.redirect || '/';
+
+      } catch (err) {
+        showError('Could not reach the server. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Verify & sign in';
+      }
+    });
+
+    document.getElementById('resend-email-otp').addEventListener('click', async () => {
+      const btn = document.getElementById('resend-email-otp');
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+      try {
+        const res = await secureFetch('/api/admin/resend-otp', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success){
+          showInfo('A new code was sent to your email.');
+        } else {
+          showError(data.error || 'Could not resend code.');
+        }
+      } catch (err) {
+        showError('Could not reach the server. Please try again.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Resend code';
+      }
+    });
+
+    // Auto-numeric-only filter for OTP field
+    document.getElementById('otp_email').addEventListener('input', (e) => {
+      e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+    });
+
+    // If we just got bounced here by the idle-logout timer on an authenticated
+    // page, tell the user why instead of leaving them confused.
+    (function showIdleReasonIfAny(){
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('reason') === 'idle') {
+        showInfo("You were signed out after 1 minute of inactivity.");
+      }
+    })();
+
+    // Start on step 1
+    // NOTE: no idle-logout timer here on purpose — this is the login page
+    // itself. The idle-logout script belongs only on pages behind
+    // @role_required("admin"), e.g. the dashboard base template. Putting it
+    // here was the bug: session.clear() from an idle timeout while the user
+    // was waiting for the OTP email wiped pending_admin_id/pending_admin_stage
+    // and force-redirected back here, which looked like "verified OTP but
+    // bounced back to sign-in."
+    setStep(1);
+
   </script>
 
 </body>

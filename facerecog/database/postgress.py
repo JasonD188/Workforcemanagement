@@ -2,7 +2,7 @@ import psycopg2
 import os
 from dotenv import load_dotenv
 
-env_path = os.path.join(os.path.dirname(__file__), "env", ".env")
+env_path = os.path.join(os.path.dirname(__file__), "..", "env", ".env")
 load_dotenv(env_path)
 
 def get_connection():

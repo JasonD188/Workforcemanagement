@@ -9,7 +9,6 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf
 from api_routes import api_bp
 from apiuser_routes import apiuser_bp
 from auth.routeslogin import auth_bp
-from auth.decorators import login_required, role_required
 from registerface_routes import registerface_bp
 from deepfacerecog_routes import deepfacerecog_bp
 from qrscanner_routes import qrcodescanner_bp
@@ -17,6 +16,13 @@ from database.postgress import get_connection
 from config.appwrite_config import storage, bucket_id
 from auth.admin_routes import admin_bp 
 from history_routes import employee_bp
+from api_analytics.analytics import analytics_export_bp
+from otp_service.otp_auth import otp_bp
+from auth.decorators import login_required, role_required, page_login_required, page_role_required
+
+
+
+
 
 env_path = os.path.join(os.path.dirname(__file__), "env", ".env")
 load_dotenv(env_path)
@@ -33,7 +39,7 @@ csrf = CSRFProtect(app)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 
-app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SECURE'] = False
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
@@ -54,7 +60,10 @@ app.register_blueprint(registerface_bp, url_prefix="/registerface")
 app.register_blueprint(api_bp)
 app.register_blueprint(apiuser_bp)
 app.register_blueprint(admin_bp)
+
 app.register_blueprint(employee_bp)
+app.register_blueprint(analytics_export_bp)
+
 
 app.register_blueprint(
    deepfacerecog_bp,
@@ -78,7 +87,7 @@ def add_no_cache_headers(response):
 
 
 @app.route("/")
-@role_required('admin')
+@page_role_required('admin')
 def dashboard():
     return render_template("dashboard.html")
 
@@ -87,12 +96,12 @@ def loginuser():
     return render_template("loginuser.html")
 
 @app.route("/user_dashboard")
-@login_required
+@page_login_required
 def user_dashboard():
     return render_template("user_dashboard.html")
 
 @app.route("/uiface")
-@role_required('admin')
+@page_role_required('admin')
 def deepfacerecog():
     return render_template("uiface.html")
 

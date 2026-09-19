@@ -10,6 +10,7 @@
 <!-- Face detection (in-browser, tinyFaceDetector lang - mabilis, sapat na
      para malaman kung may mukha bago mag-register). -->
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="/static/csrf_helper.js"></script>
 </head>
 
 <body class="bg-slate-900 text-white min-h-screen flex flex-col items-center p-4 sm:p-6">
@@ -334,57 +335,72 @@ async function registerFace(){
 
     let res, data;
     try {
-        res = await fetch(
-            "/registerface/register",
-            {
-                method:"POST",
-                headers:{
-                    "Content-Type":"application/json"
-                },
-                body:JSON.stringify({
-                    name,
-                    contact,
-                    address,
-                    dateHired,
-                    image
-                })
-            }
+    res = await secureFetch(
+        "/registerface/register",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                name,
+                contact,
+                address,
+                dateHired,
+                image
+            })
+        }
+    );
+
+    const rawText = await res.text();
+    try {
+        data = JSON.parse(rawText);
+    } catch (parseErr) {
+        console.error("Non-JSON response from /registerface/register:", rawText);
+        throw new Error(
+            `Server error (HTTP ${res.status}). Hindi valid ang sagot ng server - ` +
+            `tingnan ang Flask console/log para sa tunay na error.`
         );
-
-        // Basahin muna ang body bilang text - kung hindi valid JSON ang
-        // sagot ng server (hal. HTML error page mula sa isang 500 error),
-        // gusto nating malaman kaagad kesa mag-throw agad ang res.json()
-        // at makulong ang UI sa "Waiting...".
-        const rawText = await res.text();
-        try {
-            data = JSON.parse(rawText);
-        } catch (parseErr) {
-            console.error("Non-JSON response from /registerface/register:", rawText);
-            throw new Error(
-                `Server error (HTTP ${res.status}). Hindi valid ang sagot ng server - ` +
-                `tingnan ang Flask console/log para sa tunay na error.`
-            );
-        }
-
-        if(!res.ok || data.success === false){
-            throw new Error(data.message || `Nabigo ang pag-save (HTTP ${res.status}).`);
-        }
-    } catch (err) {
-        console.error("Registration failed:", err);
-        showError(err.message || "Nabigo ang pag-save. Subukan ulit.");
-        saveBtn.disabled = false;
-        saveBtn.textContent = "Save Picture";
-        updateFaceStatus(faceCurrentlyDetected);
-        return;
     }
+
+    if(!res.ok || data.success === false){
+        throw new Error(data.message || `Nabigo ang pag-save (HTTP ${res.status}).`);
+    }
+} catch (err) {
+    console.error("Registration failed:", err);
+    showError(err.message || "Nabigo ang pag-save. Subukan ulit.");
+    saveBtn.disabled = false;
+    saveBtn.textContent = "Save Picture";
+    updateFaceStatus(faceCurrentlyDetected);
+    return;
+}
 
     const existingBadge = data.is_existing
         ? `<span class="inline-block mt-1 px-2 py-1 text-xs font-semibold bg-yellow-500 text-black rounded">Existing Employee</span><br>`
         : "";
 
+    // NEW: kung data.face_verified === false, ibig sabihin na-save na ang
+    // litrato/record pero HINDI ito magagamit ng face scanner (walang
+    // malinaw na nakitang mukha, o sobrang dami). Dati, walang paraan
+    // ang user na malaman ito dahil "✓ saved successfully" pa rin ang
+    // ipinapakita kahit tahimik na nabigo ang encoding sa background.
+    // Ngayon, ipinapakita nang malinaw ang warning mula sa server, at
+    // hindi na ginagamit ang plain na berdeng checkmark kapag may
+    // nabigong face verification.
+    const faceVerified = data.face_verified !== false;
+
+    const statusLine = faceVerified
+        ? `<span class="text-green-400 font-semibold">✓ ${data.message}</span><br>`
+        : `<span class="text-amber-400 font-semibold">⚠ ${data.message} (litrato lang) — HINDI pa magagamit ng face scanner)</span><br>`;
+
+    const warningLine = data.warning
+        ? `<span class="text-amber-400 block mt-1">⚠ ${data.warning}</span>`
+        : "";
+
     resultDiv.innerHTML = `
-        <span class="text-green-400 font-semibold">✓ ${data.message}</span><br>
+        ${statusLine}
         ${existingBadge}
+        ${warningLine}
         <span class="text-sm sm:text-base text-slate-300">
             Employee ID: ${data.employee_id} <br>
             Contact: ${data.contact} <br>
@@ -414,7 +430,8 @@ async function registerFace(){
         window.parent.postMessage({
             type: "employee-registered",
             name: data.name,
-            message: data.message
+            message: data.message,
+            faceVerified: faceVerified
         }, "*");
     }
 }

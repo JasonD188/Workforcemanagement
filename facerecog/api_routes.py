@@ -15,6 +15,7 @@ def get_employees():
 @api_bp.route("/api/employees", methods=["POST"])
 @role_required("admin")
 def add_employee():
+    
     data = request.get_json() or {}
     name = (data.get("name") or "").strip()
     if not name:

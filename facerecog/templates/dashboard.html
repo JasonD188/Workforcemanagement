@@ -537,7 +537,7 @@
         <select id="schedule-employee-select" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/40 font-mono"></select>
       </div>
       <div id="schedule-replacing-wrap" class="hidden">
-        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Replacing (kanino ipapalit)</label>
+        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Replacing</label>
         <select id="schedule-replacing-select" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 font-mono">
           <option value="">— None / walang papalitan —</option>
         </select>
@@ -617,11 +617,11 @@ const LOCATION_MATCH_WINDOW_MINUTES = 15;
 const subPanels = {
   'time-attendance': {
     title: 'Time and Attendance System',
-    subtitle: 'Track employee check-ins, outs and attendance.',
+    subtitle: 'Track employee check-ins, outs and attendance — pulled live from Monitoring scan records.',
     color: 'brand',
     icon: '<circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/>',
-    stats: [['Checked In Today','0'], ['Late Arrivals','0'], ['Absent','0'], ['Avg. Hours','—']],
-    table: { headers: ['Employee','Check In','Check Out','Status'], rows: [] }
+    stats: [['Checked In Today','0'], ['Completed (In+Out)','0'], ['Still Clocked In','0'], ['Avg. Hours','—']],
+    isAttendanceTable: true,
   },
   'shift-schedule': {
     title: 'Shift and Schedule Management',
@@ -637,7 +637,7 @@ const subPanels = {
     color: 'violet',
     icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M9 3h6l1 2h2a1 1 0 011 1v14a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1h2l1-2z"/><path stroke-linecap="round" d="M9 11h6M9 15h6"/>',
     stats: [['Pending Approval','0'], ['Approved This Week','0'], ['Rejected','0'], ['Total Hours Logged','0h']],
-    table: { headers: ['Employee','Week Of','Hours','Status'], rows: [] }
+    isTimesheetTable: true,
   },
   'leave-management': {
     title: 'Leave Management',
@@ -861,6 +861,15 @@ function renderSubPanel(key) {
     data.stats[2][1] = String(leaveData.filter(l => l.status === 'Declined').length);
     data.stats[3][1] = String(leaveData.filter(l => l.status === 'Approved').length);
   }
+  if (key === 'timesheet') {
+    ensureTimesheetData();
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    data.stats[0][1] = String(timesheetRecords.filter(r => r.approvalStatus === 'Pending').length);
+    data.stats[1][1] = String(timesheetRecords.filter(r => r.approvalStatus === 'Approved' && r.dateObj.getTime() >= weekAgo).length);
+    data.stats[2][1] = String(timesheetRecords.filter(r => r.approvalStatus === 'Rejected').length);
+    const totalHrs = timesheetRecords.reduce((sum, r) => sum + (r.regularHours || 0) + (r.otHours || 0), 0);
+    data.stats[3][1] = `${totalHrs.toFixed(1)}h`;
+  }
 
   let statsHtml = data.isAnalyticsChart ? '' : data.stats.map(([label, value]) => `
     <div class="${c.bg} rounded-xl p-4">
@@ -871,6 +880,23 @@ function renderSubPanel(key) {
   let bodyHtml;
   if (data.isAnalyticsChart) {
     bodyHtml = `<div id="analytics-detail-root"><p class="text-sm text-slate-400 py-10 text-center">Loading analytics…</p></div>`;
+  } else if (data.isAttendanceTable) {
+    bodyHtml = `
+      <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm table-scroll">
+        <table class="w-full text-sm min-w-[720px]">
+          <thead class="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide">
+            <tr>
+              <th class="text-left px-5 py-3 font-semibold">Employee</th>
+              <th class="text-left px-5 py-3 font-semibold">QR ID</th>
+              <th class="text-left px-5 py-3 font-semibold">Date</th>
+              <th class="text-left px-5 py-3 font-semibold">Time In</th>
+              <th class="text-left px-5 py-3 font-semibold">Time Out</th>
+              <th class="text-left px-5 py-3 font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody id="full-attendance-tbody" class="divide-y divide-slate-100 dark:divide-white/10"></tbody>
+        </table>
+      </div>`;
   } else if (data.isScheduleTable) {
     bodyHtml = `
       <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm table-scroll">
@@ -907,18 +933,10 @@ function renderSubPanel(key) {
           <tbody id="full-leave-tbody" class="divide-y divide-slate-100 dark:divide-white/10"></tbody>
         </table>
       </div>`;
+  } else if (data.isTimesheetTable) {
+    bodyHtml = `<div id="timesheet-root"></div>`;
   } else {
-    const rows = data.table.rows.length
-      ? data.table.rows.map(r => `<tr class="hover:bg-slate-50 dark:hover:bg-white/5">${r.map(cell => `<td class="px-5 py-3 text-slate-700 dark:text-slate-300 whitespace-nowrap">${cell}</td>`).join('')}</tr>`).join('')
-      : `<tr><td colspan="${data.table.headers.length}" class="px-5 py-8 text-center text-sm text-slate-400">No data yet.</td></tr>`;
-    const heads = data.table.headers.map(h => `<th class="text-left px-5 py-3 font-semibold whitespace-nowrap">${h}</th>`).join('');
-    bodyHtml = `
-      <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm table-scroll">
-        <table class="w-full text-sm min-w-[520px]">
-          <thead class="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide"><tr>${heads}</tr></thead>
-          <tbody class="divide-y divide-slate-100 dark:divide-white/10">${rows}</tbody>
-        </table>
-      </div>`;
+    bodyHtml = `<div class="p-6 text-sm text-slate-400">No data yet.</div>`;
   }
 
   target.innerHTML = `
@@ -930,7 +948,15 @@ function renderSubPanel(key) {
         <h2 class="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100">${data.title}</h2>
         <p class="text-sm text-slate-500 dark:text-slate-400">${data.subtitle}</p>
       </div>
-      ${data.isScheduleTable ? `
+      ${data.isAttendanceTable ? `
+      <button id="btn-refresh-attendance" class="text-sm font-semibold text-white ${c.solid} px-4 py-2 rounded-lg hover:opacity-90 transition sm:ml-auto flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.836 0a8.001 8.001 0 00-15.418-2M20 20v-5h-.582m-15.836 0a8.001 8.001 0 0015.418 2"/></svg>
+        Refresh
+      </button>
+      <button data-panel="dashboard" class="nav-item text-sm font-semibold ${c.text} ${c.bg} px-4 py-2 rounded-lg hover:opacity-80 transition">
+        ← Back to Dashboard
+      </button>
+      ` : data.isScheduleTable ? `
       <button id="btn-shift-employee" class="text-sm font-semibold text-white ${c.solid} px-4 py-2 rounded-lg hover:opacity-90 transition sm:ml-auto flex items-center gap-1.5">
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12M8 7l4-4M8 7l4 4M16 17H4M16 17l-4 4M16 17l-4-4"/></svg>
         Shift Employee
@@ -950,6 +976,14 @@ function renderSubPanel(key) {
       <button data-panel="dashboard" class="nav-item text-sm font-semibold ${c.text} ${c.bg} px-4 py-2 rounded-lg hover:opacity-80 transition">
         ← Back to Dashboard
       </button>
+      ` : data.isTimesheetTable ? `
+      <button id="btn-add-time-entry" class="text-sm font-semibold text-white ${c.solid} px-4 py-2 rounded-lg hover:opacity-90 transition sm:ml-auto flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14"/></svg>
+        Add Time Entry
+      </button>
+      <button data-panel="dashboard" class="nav-item text-sm font-semibold ${c.text} ${c.bg} px-4 py-2 rounded-lg hover:opacity-80 transition">
+        ← Back to Dashboard
+      </button>
       ` : `
       <button data-panel="dashboard" class="nav-item sm:ml-auto text-sm font-semibold ${c.text} ${c.bg} px-4 py-2 rounded-lg hover:opacity-80 transition">
         ← Back to Dashboard
@@ -960,6 +994,11 @@ function renderSubPanel(key) {
     ${bodyHtml}
   `;
 
+  if (data.isAttendanceTable) {
+    loadTimeAttendance();
+    const refreshBtn = document.getElementById('btn-refresh-attendance');
+    if (refreshBtn) refreshBtn.addEventListener('click', loadTimeAttendance);
+  }
   if (data.isLeaveTable) {
     renderFullLeaveTable();
     document.getElementById('btn-new-leave').addEventListener('click', openLeaveModal);
@@ -972,7 +1011,168 @@ function renderSubPanel(key) {
   if (data.isAnalyticsChart) {
     renderAnalyticsDetail();
   }
+  if (data.isTimesheetTable) {
+    renderTimesheetPanel();
+    document.getElementById('btn-add-time-entry').addEventListener('click', () => openTimesheetEditModal(null));
+  }
   attachDynamicListeners();
+}
+
+// ==========================================
+// TIME AND ATTENDANCE — parehong scan-logs source gaya ng Monitoring.
+// Ang unang scan ng employee sa isang araw ang "Time In", ang pangalawa
+// (kung meron) ang "Time Out". Ang Status ay batay sa naka-schedule na
+// Time In (9:00 AM) at Time Out (6:00 PM): sakto o mas maaga sa 9:00 AM
+// ang Time In = "Present"; mas huli sa 9:00 AM = "Late"; kung Time Out
+// naman ay lagpas 6:00 PM = "Overtime" (dinedetermina lang ito kapag
+// hindi Late ang Time In). Blangko pa rin ang Status hangga't wala pang
+// Time Out.
+// ==========================================
+let attendanceRecords = [];
+
+const ATTENDANCE_SCHEDULED_IN_MIN = 9 * 60;   // 9:00 AM
+const ATTENDANCE_SCHEDULED_OUT_MIN = 18 * 60; // 6:00 PM
+
+async function loadTimeAttendance() {
+  const tbody = document.getElementById('full-attendance-tbody');
+  if (tbody) {
+    tbody.innerHTML = `<tr><td colspan="6" class="px-5 py-8 text-center text-sm text-slate-400">Loading attendance…</td></tr>`;
+  }
+
+  try {
+    const scanData = await apiGet(`${FACE_API_BASE}/deepfacerecog/api/scan-logs`);
+    const logs = scanData.logs || [];
+    attendanceRecords = buildAttendanceRecords(logs);
+  } catch (e) {
+    attendanceRecords = [];
+    showToast('Could not load attendance records. Is the backend running on port 5001?', 'error');
+  }
+
+  renderFullAttendanceTable();
+  renderAttendanceStats();
+}
+
+function scanDateKey(ts) {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD, local grouping key
+}
+
+function buildAttendanceRecords(logs) {
+  // I-group ang scans per employee (qrId o name) + araw.
+  const groups = new Map();
+
+  logs.forEach(l => {
+    if (!l.timestamp) return;
+    const dateKey = scanDateKey(l.timestamp);
+    if (!dateKey) return;
+    const empKey = l.qrId || l.employeeId || l.name || 'unknown';
+    const groupKey = `${empKey}__${dateKey}`;
+
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        employeeName: l.name || 'Unknown',
+        qrId: l.qrId || l.employeeId || employeeQrId(l.name),
+        dateKey,
+        scans: [],
+      });
+    }
+    groups.get(groupKey).scans.push(l);
+  });
+
+  const records = [];
+  groups.forEach(g => {
+    // Pagsunud-sunurin ang scans ng araw na iyon sa oras.
+    g.scans.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const timeInLog = g.scans[0];
+    const timeOutLog = g.scans.length > 1 ? g.scans[g.scans.length - 1] : null;
+
+    records.push({
+      employeeName: g.employeeName,
+      qrId: g.qrId,
+      dateKey: g.dateKey,
+      dateLabel: new Date(timeInLog.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+      timeInTs: timeInLog.timestamp,
+      timeOutTs: timeOutLog ? timeOutLog.timestamp : null,
+    });
+  });
+
+  // Pinakabago munang araw sa taas.
+  records.sort((a, b) => new Date(b.timeInTs) - new Date(a.timeInTs));
+  return records;
+}
+
+function attendanceStatusLabel(record) {
+  // Blangko muna ang Status hangga't wala pang Time Out — walang
+  // ipapakitang Present/Late/Overtime na label bago kumpleto ang pares.
+  if (!record.timeOutTs) return '';
+
+  const inTime = new Date(record.timeInTs);
+  const outTime = new Date(record.timeOutTs);
+  const inMinutes = inTime.getHours() * 60 + inTime.getMinutes();
+  const outMinutes = outTime.getHours() * 60 + outTime.getMinutes();
+
+  // Late: pumasok pagkatapos ng 9:00 AM.
+  if (inMinutes > ATTENDANCE_SCHEDULED_IN_MIN) {
+    return `<span class="text-xs font-semibold px-2.5 py-1 rounded-full text-gold-600 bg-gold-400/10">Late</span>`;
+  }
+  // Overtime: sakto o maagang pumasok, pero umalis lagpas 6:00 PM.
+  if (outMinutes > ATTENDANCE_SCHEDULED_OUT_MIN) {
+    return `<span class="text-xs font-semibold px-2.5 py-1 rounded-full text-violet-600 bg-violet-50 dark:bg-violet-500/10">Overtime</span>`;
+  }
+  // Present: sakto sa oras o pumasok ng maaga, at umuwi sa oras.
+  return `<span class="text-xs font-semibold px-2.5 py-1 rounded-full text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10">Present</span>`;
+}
+
+function renderFullAttendanceTable() {
+  const tbody = document.getElementById('full-attendance-tbody');
+  if (!tbody) return;
+
+  if (!attendanceRecords.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="px-5 py-8 text-center text-sm text-slate-400">No attendance records yet.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = attendanceRecords.map(r => {
+    const timeInLabel = new Date(r.timeInTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeOutLabel = r.timeOutTs
+      ? new Date(r.timeOutTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : '<span class="text-slate-400">—</span>';
+    // Status column: literal na blangko (walang laman) hangga't wala
+    // pang Time Out.
+    const statusCell = attendanceStatusLabel(r) || '<span class="text-slate-300 dark:text-white/20">—</span>';
+
+    return `
+      <tr class="hover:bg-slate-50 dark:hover:bg-white/5">
+        <td class="px-5 py-3 font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">${r.employeeName}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap font-mono text-xs">${r.qrId || '—'}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${r.dateLabel}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${timeInLabel}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${timeOutLabel}</td>
+        <td class="px-5 py-3 whitespace-nowrap">${statusCell}</td>
+      </tr>`;
+  }).join('');
+}
+
+function renderAttendanceStats() {
+  const todayKey = scanDateKey(new Date().toISOString());
+  const todayRecords = attendanceRecords.filter(r => r.dateKey === todayKey);
+  const checkedInToday = todayRecords.length;
+  const completed = todayRecords.filter(r => r.timeOutTs).length;
+  const stillIn = todayRecords.filter(r => !r.timeOutTs).length;
+
+  const completedAll = attendanceRecords.filter(r => r.timeOutTs);
+  const avgHours = completedAll.length
+    ? (completedAll.reduce((sum, r) => sum + (new Date(r.timeOutTs) - new Date(r.timeInTs)) / (1000 * 60 * 60), 0) / completedAll.length)
+    : 0;
+
+  const target = document.getElementById('panel-time-attendance');
+  if (!target) return;
+  const statEls = target.querySelectorAll('.grid.grid-cols-2 p.text-2xl');
+  if (statEls[0]) statEls[0].textContent = String(checkedInToday);
+  if (statEls[1]) statEls[1].textContent = String(completed);
+  if (statEls[2]) statEls[2].textContent = String(stillIn);
+  if (statEls[3]) statEls[3].textContent = avgHours ? `${avgHours.toFixed(1)}h` : '—';
 }
 
 function splitLegacyTime(timeStr) {
@@ -1360,6 +1560,818 @@ async function handleLeaveAction(id, action) {
   }
 }
 
+// ==========================================
+// TIMESHEET MANAGEMENT
+// ==========================================
+// No backend endpoint exists for timesheets yet, so this module generates
+// deterministic sample daily records per employee (seeded off their name,
+// so the data stays stable across re-renders) and manages everything —
+// filtering, approvals, corrections, locking, exporting — entirely in the
+// browser. Swap `ensureTimesheetData()` for a real `/api/timesheets` fetch
+// once that endpoint exists; every other function here just reads/writes
+// `timesheetRecords`, so the rest of the UI won't need to change.
+
+const TIMESHEET_SCHEDULED_IN = 8 * 60;      // 8:00 AM, in minutes since midnight
+const TIMESHEET_SCHEDULED_OUT = 17 * 60;    // 5:00 PM
+const TIMESHEET_GRACE_MINUTES = 5;          // grace period before "Late"
+const TIMESHEET_DEFAULT_BREAK = 1;          // hours
+
+const TIMESHEET_POSITIONS = ['Tour Coordinator', 'Travel Consultant', 'Operations Staff', 'Driver', 'Guest Relations', 'Logistics Officer'];
+const TIMESHEET_DEPARTMENTS = ['Driver', 'Tourguide', 'Staff',];
+
+let timesheetRecords = [];
+let timesheetInitializedFor = new Set();
+let timesheetView = 'daily'; // 'daily' | 'weekly' | 'monthly' | 'calendar'
+let timesheetFilters = { employee: '', status: 'all', department: 'all', month: new Date().getMonth() + 1, year: new Date().getFullYear() };
+let timesheetIdCounter = 1;
+
+function hashSeed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < String(str).length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function mulberry32(seed) {
+  let a = seed;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function timesheetEmployeeMeta(name) {
+  const seed = hashSeed(name || 'employee');
+  const rand = mulberry32(seed);
+  return {
+    department: TIMESHEET_DEPARTMENTS[Math.floor(rand() * TIMESHEET_DEPARTMENTS.length) % TIMESHEET_DEPARTMENTS.length],
+    position: TIMESHEET_POSITIONS[Math.floor(rand() * TIMESHEET_POSITIONS.length) % TIMESHEET_POSITIONS.length],
+  };
+}
+
+function minutesToClock(mins) {
+  if (mins == null || isNaN(mins)) return '—';
+  let h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function isoDateAddDays(base, offset) {
+  const d = new Date(base);
+  d.setDate(d.getDate() + offset);
+  return d;
+}
+
+// Builds the current pay-period's daily records for one employee the
+// first time that employee is seen, using a seeded RNG so the same
+// employee always renders the same sample pattern.
+function generateTimesheetForEmployee(name) {
+  if (timesheetInitializedFor.has(name)) return;
+  timesheetInitializedFor.add(name);
+
+  const rand = mulberry32(hashSeed(name) ^ 0x9e3779b9);
+  const qrId = employeeQrId(name);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Last 10 working days (skip most weekends) ending today.
+  const days = [];
+  let cursor = new Date(today);
+  while (days.length < 10) {
+    const dow = cursor.getDay();
+    const isWeekend = dow === 0 || dow === 6;
+    if (!isWeekend || rand() < 0.15) days.push(new Date(cursor));
+    cursor = isoDateAddDays(cursor, -1);
+  }
+  days.reverse();
+
+  days.forEach((d, idx) => {
+    const roll = rand();
+    let approvalStatus = 'Approved';
+    let locked = idx < days.length - 3; // older entries auto-locked
+    let timeInMin = null, timeOutMin = null, breakHours = TIMESHEET_DEFAULT_BREAK;
+    let manualStatus = null; // Leave / Rest Day / Holiday / Absent override
+
+    if (roll < 0.06) {
+      manualStatus = 'Absent';
+    } else if (roll < 0.11) {
+      manualStatus = 'Leave';
+      locked = true;
+    } else if (roll < 0.14) {
+      manualStatus = 'Rest Day';
+      locked = true;
+    } else {
+      // Normal work day: jitter time in / out around the schedule.
+      const lateJitter = rand() < 0.22 ? Math.round(rand() * 35) : 0;
+      timeInMin = TIMESHEET_SCHEDULED_IN + lateJitter - (rand() < 0.1 ? Math.round(rand() * 8) : 0);
+      const otJitter = rand() < 0.18 ? Math.round(rand() * 150) : 0;
+      const earlyOutJitter = (!otJitter && rand() < 0.12) ? Math.round(rand() * 45) : 0;
+      timeOutMin = TIMESHEET_SCHEDULED_OUT + otJitter - earlyOutJitter;
+      if (idx === days.length - 1 && rand() < 0.3) {
+        // Most recent day: sometimes still clocked in / not started.
+        if (rand() < 0.4) { timeOutMin = null; approvalStatus = 'Pending'; locked = false; }
+      }
+      if (idx >= days.length - 3 && rand() < 0.35) approvalStatus = 'Pending';
+      if (roll > 0.94) approvalStatus = 'Rejected';
+    }
+
+    timesheetRecords.push({
+      id: timesheetIdCounter++,
+      employeeName: name,
+      employeeQrId: qrId,
+      dateObj: d,
+      dateLabel: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      fullDateLabel: d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+      weekday: d.toLocaleDateString(undefined, { weekday: 'long' }),
+      timeInMin, timeOutMin, breakHours,
+      manualStatus,
+      approvalStatus, // Pending | Approved | Rejected
+      locked,
+      requestedBy: 'System (Monitoring)',
+      approvedBy: approvalStatus === 'Approved' ? 'Admin' : null,
+      dateApprovedLabel: approvalStatus === 'Approved' ? d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : null,
+      corrections: [],
+      regularHours: 0, otHours: 0, lateMins: 0, undertimeMins: 0, // filled by recomputeTimesheetMetrics
+    });
+  });
+}
+
+function recomputeTimesheetMetrics(r) {
+  if (r.manualStatus) {
+    r.regularHours = 0; r.otHours = 0; r.lateMins = 0; r.undertimeMins = 0;
+    return;
+  }
+  if (r.timeInMin == null) {
+    r.regularHours = 0; r.otHours = 0; r.lateMins = 0; r.undertimeMins = 0;
+    return;
+  }
+  r.lateMins = Math.max(0, r.timeInMin - TIMESHEET_SCHEDULED_IN - TIMESHEET_GRACE_MINUTES);
+
+  if (r.timeOutMin == null) {
+    r.regularHours = 0; r.otHours = 0; r.undertimeMins = 0;
+    return;
+  }
+  r.undertimeMins = Math.max(0, TIMESHEET_SCHEDULED_OUT - r.timeOutMin);
+  const workedMins = Math.max(0, (r.timeOutMin - r.timeInMin) - (r.breakHours * 60));
+  const regularCapMins = (TIMESHEET_SCHEDULED_OUT - TIMESHEET_SCHEDULED_IN) - (r.breakHours * 60);
+  r.regularHours = +(Math.min(workedMins, regularCapMins) / 60).toFixed(2);
+  r.otHours = +(Math.max(0, workedMins - regularCapMins) / 60).toFixed(2);
+}
+
+function timesheetStatusInfo(r) {
+  if (r.manualStatus === 'Leave') return { label: 'Leave', cls: 'text-violet-600 bg-violet-50 dark:bg-violet-500/10' };
+  if (r.manualStatus === 'Rest Day') return { label: 'Rest Day', cls: 'text-slate-500 bg-slate-100 dark:bg-white/10' };
+  if (r.manualStatus === 'Holiday') return { label: 'Holiday', cls: 'text-gold-600 bg-gold-400/10' };
+  if (r.manualStatus === 'Absent') return { label: 'Absent', cls: 'text-red-600 bg-red-50 dark:bg-red-500/10' };
+  if (r.timeInMin == null) return { label: 'Not Started', cls: 'text-slate-500 bg-slate-100 dark:bg-white/10' };
+  if (r.timeOutMin == null) return { label: 'Clocked In', cls: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10' };
+  if (r.otHours > 0) return { label: 'Overtime', cls: 'text-brand-700 bg-brand-50 dark:bg-brand-500/10' };
+  if (r.lateMins > 0) return { label: 'Late', cls: 'text-gold-600 bg-gold-400/10' };
+  if (r.undertimeMins > 0) return { label: 'Undertime', cls: 'text-red-600 bg-red-50 dark:bg-red-500/10' };
+  return { label: 'Clocked Out', cls: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10' };
+}
+
+function ensureTimesheetData() {
+  employeeRoster.forEach(name => generateTimesheetForEmployee(name));
+  timesheetRecords.forEach(recomputeTimesheetMetrics);
+  timesheetRecords.sort((a, b) => b.dateObj - a.dateObj || a.employeeName.localeCompare(b.employeeName));
+}
+
+function timesheetRecordById(id) {
+  return timesheetRecords.find(r => r.id === id);
+}
+
+function timesheetYearOptions() {
+  const years = new Set(timesheetRecords.map(r => r.dateObj.getFullYear()));
+  years.add(new Date().getFullYear());
+  years.add(Number(timesheetFilters.year) || new Date().getFullYear());
+  return Array.from(years).sort((a, b) => b - a);
+}
+
+const TIMESHEET_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function filteredTimesheetRecords() {
+  return timesheetRecords.filter(r => {
+    if (timesheetFilters.employee && r.employeeName !== timesheetFilters.employee) return false;
+    if (timesheetFilters.department !== 'all' && timesheetEmployeeMeta(r.employeeName).department !== timesheetFilters.department) return false;
+    if (timesheetFilters.status !== 'all') {
+      const st = timesheetStatusInfo(r).label;
+      if (timesheetFilters.status === 'WithOT' && !(r.otHours > 0)) return false;
+      else if (timesheetFilters.status === 'WithMissing' && r.timeOutMin != null) return false;
+      else if (!['WithOT', 'WithMissing'].includes(timesheetFilters.status) && st !== timesheetFilters.status) return false;
+    }
+    if (timesheetFilters.month && (r.dateObj.getMonth() + 1) !== Number(timesheetFilters.month)) return false;
+    if (timesheetFilters.year && r.dateObj.getFullYear() !== Number(timesheetFilters.year)) return false;
+    return true;
+  });
+}
+
+function renderTimesheetPanel() {
+  ensureTimesheetData();
+  const root = document.getElementById('timesheet-root');
+  if (!root) return;
+
+  const employeeOptions = employeeRoster.slice().sort()
+    .map(name => `<option value="${name}" ${timesheetFilters.employee === name ? 'selected' : ''}>${name}</option>`).join('');
+  const statusOptions = ['all', 'Not Started', 'Clocked In', 'Clocked Out', 'Late', 'Undertime', 'Overtime', 'Absent', 'Incomplete', 'Leave', 'Rest Day', 'Holiday', 'WithOT', 'WithMissing'];
+  const statusLabels = { all: 'All statuses', WithOT: 'With Overtime', WithMissing: 'With Missing Time' };
+  const monthOptions = TIMESHEET_MONTH_NAMES.map((m, i) => `<option value="${i + 1}" ${Number(timesheetFilters.month) === i + 1 ? 'selected' : ''}>${m}</option>`).join('');
+  const yearOptions = timesheetYearOptions().map(y => `<option value="${y}" ${Number(timesheetFilters.year) === y ? 'selected' : ''}>${y}</option>`).join('');
+
+  root.innerHTML = `
+    <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-4 mb-5">
+      <div class="flex flex-wrap items-end gap-3">
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Employee</label>
+          <select id="ts-filter-employee" class="text-sm border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/40">
+            <option value="">All employees</option>
+            ${employeeOptions}
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Department</label>
+          <select id="ts-filter-department" class="text-sm border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/40">
+            <option value="all">All departments</option>
+            ${TIMESHEET_DEPARTMENTS.map(d => `<option value="${d}" ${timesheetFilters.department === d ? 'selected' : ''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Status</label>
+          <select id="ts-filter-status" class="text-sm border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/40">
+            ${statusOptions.map(s => `<option value="${s}" ${timesheetFilters.status === s ? 'selected' : ''}>${statusLabels[s] || s}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Month</label>
+          <select id="ts-filter-month" class="text-sm border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/40">
+            ${monthOptions}
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Year</label>
+          <select id="ts-filter-year" class="text-sm border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-violet-500/40">
+            ${yearOptions}
+          </select>
+        </div>
+        <button id="ts-filter-clear" class="text-sm font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-white/10 px-3 py-2 rounded-lg hover:bg-slate-200 dark:hover:bg-white/20 transition">Clear</button>
+
+        <div class="ml-auto flex items-center gap-2">
+          <div class="flex rounded-lg overflow-hidden border border-slate-200 dark:border-white/10 text-sm font-semibold">
+            <button data-view="daily" class="ts-view-btn px-3 py-2 transition ${timesheetView === 'daily' ? 'bg-violet-600 text-white' : 'bg-white dark:bg-ink-800 text-slate-600 dark:text-slate-300'}">Daily</button>
+            <button data-view="weekly" class="ts-view-btn px-3 py-2 transition ${timesheetView === 'weekly' ? 'bg-violet-600 text-white' : 'bg-white dark:bg-ink-800 text-slate-600 dark:text-slate-300'}">Weekly</button>
+            <button data-view="monthly" class="ts-view-btn px-3 py-2 transition ${timesheetView === 'monthly' ? 'bg-violet-600 text-white' : 'bg-white dark:bg-ink-800 text-slate-600 dark:text-slate-300'}">Monthly</button>
+            <button data-view="calendar" class="ts-view-btn px-3 py-2 transition ${timesheetView === 'calendar' ? 'bg-violet-600 text-white' : 'bg-white dark:bg-ink-800 text-slate-600 dark:text-slate-300'}">Calendar</button>
+          </div>
+          <button id="ts-export-csv" class="text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 px-3 py-2 rounded-lg inline-flex items-center gap-1.5 transition">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>
+            Export
+          </button>
+          <button id="ts-print" class="text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 px-3 py-2 rounded-lg inline-flex items-center gap-1.5 transition">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V4h12v5M6 18h12v4H6v-4zM6 14h12a2 2 0 002-2v-2a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 002 2z"/></svg>
+            Print
+          </button>
+        </div>
+      </div>
+    </div>
+    <div id="timesheet-body"></div>
+  `;
+
+  document.getElementById('ts-filter-employee').addEventListener('change', (e) => { timesheetFilters.employee = e.target.value; renderTimesheetBody(); });
+  document.getElementById('ts-filter-department').addEventListener('change', (e) => { timesheetFilters.department = e.target.value; renderTimesheetBody(); });
+  document.getElementById('ts-filter-status').addEventListener('change', (e) => { timesheetFilters.status = e.target.value; renderTimesheetBody(); });
+  document.getElementById('ts-filter-month').addEventListener('change', (e) => { timesheetFilters.month = e.target.value; renderTimesheetBody(); });
+  document.getElementById('ts-filter-year').addEventListener('change', (e) => { timesheetFilters.year = e.target.value; renderTimesheetBody(); });
+  document.getElementById('ts-filter-clear').addEventListener('click', () => {
+    timesheetFilters = { employee: '', status: 'all', department: 'all', month: new Date().getMonth() + 1, year: new Date().getFullYear() };
+    renderTimesheetPanel();
+  });
+  document.querySelectorAll('.ts-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => { timesheetView = btn.dataset.view; renderTimesheetPanel(); });
+  });
+  document.getElementById('ts-export-csv').addEventListener('click', exportTimesheetCsv);
+  document.getElementById('ts-print').addEventListener('click', () => window.print());
+
+  renderTimesheetBody();
+}
+
+function renderTimesheetBody() {
+  const body = document.getElementById('timesheet-body');
+  if (!body) return;
+  const records = filteredTimesheetRecords();
+  if (timesheetView === 'daily') {
+    body.innerHTML = renderTimesheetDailyTable(records);
+    attachTimesheetRowListeners();
+  } else if (timesheetView === 'calendar') {
+    body.innerHTML = renderTimesheetCalendar(records);
+    attachTimesheetCalendarListeners();
+  } else {
+    body.innerHTML = renderTimesheetSummaryTable(records, timesheetView);
+  }
+}
+
+function renderTimesheetCalendar(records) {
+  const year = Number(timesheetFilters.year) || new Date().getFullYear();
+  const month = Number(timesheetFilters.month) || (new Date().getMonth() + 1); // 1-12
+  const firstDay = new Date(year, month - 1, 1);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const startWeekday = firstDay.getDay(); // 0 Sun - 6 Sat
+  const monthLabel = firstDay.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const weekdayLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+  const byDay = {};
+  records.forEach(r => {
+    if (r.dateObj.getFullYear() !== year || (r.dateObj.getMonth() + 1) !== month) return;
+    const day = r.dateObj.getDate();
+    if (!byDay[day]) byDay[day] = [];
+    byDay[day].push(r);
+  });
+
+  const today = new Date();
+  let cells = '';
+  for (let i = 0; i < startWeekday; i++) {
+    cells += `<div class="aspect-square"></div>`;
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dayRecords = byDay[day] || [];
+    const present = dayRecords.filter(r => !r.manualStatus && r.timeInMin != null);
+    const hasPresent = present.length > 0;
+    const isToday = today.getFullYear() === year && (today.getMonth() + 1) === month && today.getDate() === day;
+    cells += `
+      <button type="button" class="ts-cal-day aspect-square rounded-lg border flex flex-col items-center justify-center gap-1 p-1 transition
+        ${hasPresent
+          ? 'border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/10 hover:bg-brand-100 dark:hover:bg-brand-500/20 cursor-pointer'
+          : 'border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-white/5 cursor-default'}
+        ${isToday ? 'ring-2 ring-gold-400' : ''}"
+        data-day="${day}" ${hasPresent ? '' : 'disabled'}>
+        <span class="text-xs font-semibold ${hasPresent ? 'text-slate-800 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500'}">${day}</span>
+        ${hasPresent ? `<span class="text-[10px] font-bold text-brand-700 dark:text-brand-300">${present.length} in</span>` : ''}
+      </button>`;
+  }
+
+  return `
+    <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h4 class="font-semibold text-sm text-slate-700 dark:text-slate-300">${monthLabel}</h4>
+        <p class="text-[11px] text-slate-400">Click a highlighted day to see who checked in.</p>
+      </div>
+      <div class="grid grid-cols-7 gap-1.5 mb-1.5">
+        ${weekdayLabels.map(w => `<div class="text-center text-[10px] font-semibold text-slate-400 py-1">${w}</div>`).join('')}
+      </div>
+      <div class="grid grid-cols-7 gap-1.5">
+        ${cells}
+      </div>
+    </div>`;
+}
+
+function attachTimesheetCalendarListeners() {
+  document.querySelectorAll('.ts-cal-day').forEach(btn => {
+    if (btn.disabled) return;
+    btn.addEventListener('click', () => openTimesheetCalendarDayModal(+btn.dataset.day));
+  });
+}
+
+function openTimesheetCalendarDayModal(day) {
+  const year = Number(timesheetFilters.year) || new Date().getFullYear();
+  const month = Number(timesheetFilters.month) || (new Date().getMonth() + 1);
+  const records = filteredTimesheetRecords().filter(r =>
+    r.dateObj.getFullYear() === year && (r.dateObj.getMonth() + 1) === month && r.dateObj.getDate() === day
+  );
+  const present = records.filter(r => !r.manualStatus && r.timeInMin != null);
+  const dateLabel = new Date(year, month - 1, day).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  const rowsHtml = present.length
+    ? present.map(r => {
+        const st = timesheetStatusInfo(r);
+        const meta = timesheetEmployeeMeta(r.employeeName);
+        return `
+          <li class="flex items-center justify-between gap-3 py-2 border-b border-slate-100 dark:border-white/10 last:border-0">
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${r.employeeName}</p>
+              <p class="text-[11px] text-slate-400 font-mono">${r.employeeQrId} &middot; ${meta.position}</p>
+            </div>
+            <div class="text-right shrink-0">
+              <p class="text-xs text-slate-600 dark:text-slate-300">${minutesToClock(r.timeInMin)} – ${minutesToClock(r.timeOutMin)}</p>
+              <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.cls}">${st.label}</span>
+            </div>
+          </li>`;
+      }).join('')
+    : `<li class="text-sm text-slate-400 text-center py-6">No employees checked in this day.</li>`;
+
+  showModal(`Attendance — ${dateLabel}`, `<ul class="max-h-96 overflow-y-auto scrollbar-thin">${rowsHtml}</ul>`);
+}
+
+function renderTimesheetDailyTable(records) {
+  if (!records.length) {
+    return `<div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-10 text-center text-sm text-slate-400">No timesheet entries match these filters.</div>`;
+  }
+  const rows = records.map(r => {
+    const st = timesheetStatusInfo(r);
+    const meta = timesheetEmployeeMeta(r.employeeName);
+    const lockIcon = r.locked
+      ? `<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path stroke-linecap="round" d="M8 11V7a4 4 0 118 0v4"/></svg>`
+      : `<svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path stroke-linecap="round" d="M8 11V7a4 4 0 017.75-1.35"/></svg>`;
+    return `
+      <tr class="hover:bg-slate-50 dark:hover:bg-white/5 align-top">
+        <td class="px-5 py-3 whitespace-nowrap">
+          <p class="font-medium text-slate-800 dark:text-slate-100">${r.employeeName}</p>
+          <p class="text-[11px] font-mono text-slate-400">${r.employeeQrId} &middot; ${meta.position}</p>
+        </td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${r.fullDateLabel}<br><span class="text-[11px] text-slate-400">${r.weekday}</span></td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${minutesToClock(r.timeInMin)}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${minutesToClock(r.timeOutMin)}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${r.manualStatus ? '—' : r.breakHours + ' hr'}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${r.regularHours.toFixed(2)}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${r.otHours.toFixed(2)}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${r.lateMins}m</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${r.undertimeMins}m</td>
+        <td class="px-5 py-3 whitespace-nowrap"><span class="text-xs font-semibold px-2.5 py-1 rounded-full ${st.cls}">${st.label}</span></td>
+        <td class="px-5 py-3 whitespace-nowrap"><span class="inline-flex items-center gap-1 text-[11px] font-semibold ${r.approvalStatus === 'Approved' ? 'text-emerald-600' : r.approvalStatus === 'Rejected' ? 'text-red-600' : 'text-gold-600'}">${lockIcon}${r.approvalStatus}</span></td>
+        <td class="px-5 py-3 whitespace-nowrap">
+          <div class="flex flex-wrap gap-2">
+            <button class="ts-action text-xs font-semibold text-violet-600 hover:underline" data-action="view" data-id="${r.id}">View</button>
+            <button class="ts-action text-xs font-semibold text-brand-600 hover:underline" data-action="edit" data-id="${r.id}" ${r.locked ? 'disabled style="opacity:.4;cursor:not-allowed;"' : ''}>Edit</button>
+            ${r.approvalStatus === 'Pending' ? `
+              <button class="ts-action text-xs font-semibold text-emerald-600 hover:underline" data-action="approve" data-id="${r.id}">Approve</button>
+              <button class="ts-action text-xs font-semibold text-red-600 hover:underline" data-action="reject" data-id="${r.id}">Reject</button>
+            ` : ''}
+            <button class="ts-action text-xs font-semibold text-gold-600 hover:underline" data-action="correct" data-id="${r.id}">Correct</button>
+            <button class="ts-action text-xs font-semibold text-slate-500 hover:underline" data-action="lock" data-id="${r.id}">${r.locked ? 'Unlock' : 'Lock'}</button>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm table-scroll">
+      <table class="w-full text-sm min-w-[1180px]">
+        <thead class="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide">
+          <tr>
+            <th class="text-left px-5 py-3 font-semibold">Employee</th>
+            <th class="text-left px-5 py-3 font-semibold">Date</th>
+            <th class="text-left px-5 py-3 font-semibold">Time In</th>
+            <th class="text-left px-5 py-3 font-semibold">Time Out</th>
+            <th class="text-left px-5 py-3 font-semibold">Break</th>
+            <th class="text-left px-5 py-3 font-semibold">Regular Hrs</th>
+            <th class="text-left px-5 py-3 font-semibold">OT</th>
+            <th class="text-left px-5 py-3 font-semibold">Late</th>
+            <th class="text-left px-5 py-3 font-semibold">Undertime</th>
+            <th class="text-left px-5 py-3 font-semibold">Status</th>
+            <th class="text-left px-5 py-3 font-semibold">Approval</th>
+            <th class="text-left px-5 py-3 font-semibold">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-white/10">${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderTimesheetSummaryTable(records, period) {
+  const byEmployee = new Map();
+  records.forEach(r => {
+    if (!byEmployee.has(r.employeeName)) {
+      byEmployee.set(r.employeeName, { name: r.employeeName, present: 0, absent: 0, leave: 0, regular: 0, ot: 0, late: 0, undertime: 0, days: 0 });
+    }
+    const g = byEmployee.get(r.employeeName);
+    g.days += 1;
+    if (r.manualStatus === 'Absent') g.absent += 1;
+    else if (r.manualStatus === 'Leave') g.leave += 1;
+    else if (!r.manualStatus) g.present += 1;
+    g.regular += r.regularHours;
+    g.ot += r.otHours;
+    g.late += r.lateMins;
+    g.undertime += r.undertimeMins;
+  });
+
+  const groups = Array.from(byEmployee.values()).sort((a, b) => a.name.localeCompare(b.name));
+  if (!groups.length) {
+    return `<div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-10 text-center text-sm text-slate-400">No timesheet entries match these filters.</div>`;
+  }
+
+  const periodLabel = period === 'weekly' ? 'Weekly Timesheet' : 'Monthly Timesheet';
+  const rows = groups.map(g => `
+    <tr class="hover:bg-slate-50 dark:hover:bg-white/5">
+      <td class="px-5 py-3 font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">${g.name}</td>
+      <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${g.days}</td>
+      <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${g.present}</td>
+      <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${g.absent}</td>
+      <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${g.leave}</td>
+      <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${g.regular.toFixed(1)} hrs</td>
+      <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${g.ot.toFixed(1)} hrs</td>
+      <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${g.late} mins</td>
+      <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${g.undertime} mins</td>
+    </tr>`).join('');
+
+  return `
+    <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm table-scroll">
+      <div class="px-5 py-3 border-b border-slate-100 dark:border-white/10">
+        <p class="font-semibold text-sm text-slate-700 dark:text-slate-200">${periodLabel} &middot; totals across the filtered date range</p>
+      </div>
+      <table class="w-full text-sm min-w-[820px]">
+        <thead class="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide">
+          <tr>
+            <th class="text-left px-5 py-3 font-semibold">Employee</th>
+            <th class="text-left px-5 py-3 font-semibold">Working Days</th>
+            <th class="text-left px-5 py-3 font-semibold">Present</th>
+            <th class="text-left px-5 py-3 font-semibold">Absent</th>
+            <th class="text-left px-5 py-3 font-semibold">Leave</th>
+            <th class="text-left px-5 py-3 font-semibold">Total Regular</th>
+            <th class="text-left px-5 py-3 font-semibold">Total OT</th>
+            <th class="text-left px-5 py-3 font-semibold">Total Late</th>
+            <th class="text-left px-5 py-3 font-semibold">Total Undertime</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-white/10">${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function attachTimesheetRowListeners() {
+  document.querySelectorAll('.ts-action').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = +btn.dataset.id;
+      const action = btn.dataset.action;
+      const record = timesheetRecordById(id);
+      if (!record) return;
+      if (action === 'view') openTimesheetDetailModal(record);
+      else if (action === 'edit') { if (!record.locked) openTimesheetEditModal(record); }
+      else if (action === 'approve') setTimesheetApproval(record, 'Approved');
+      else if (action === 'reject') setTimesheetApproval(record, 'Rejected');
+      else if (action === 'correct') openTimesheetCorrectionModal(record);
+      else if (action === 'lock') toggleTimesheetLock(record);
+    });
+  });
+}
+
+function setTimesheetApproval(record, status) {
+  record.approvalStatus = status;
+  record.approvedBy = 'Admin';
+  record.dateApprovedLabel = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  if (status === 'Approved') record.locked = true;
+  showToast(`${record.employeeName}'s timesheet for ${record.fullDateLabel} was ${status.toLowerCase()}.`, status === 'Approved' ? 'success' : 'error');
+  renderTimesheetBody();
+  renderSubPanel('timesheet');
+}
+
+function toggleTimesheetLock(record) {
+  record.locked = !record.locked;
+  showToast(`${record.employeeName}'s ${record.fullDateLabel} entry ${record.locked ? 'locked' : 'unlocked'}.`, 'info');
+  renderTimesheetBody();
+}
+
+function exportTimesheetCsv() {
+  const records = filteredTimesheetRecords();
+  if (!records.length) { showToast('No timesheet rows to export.', 'error'); return; }
+  const header = ['Employee', 'QR ID', 'Date', 'Time In', 'Time Out', 'Break (hrs)', 'Regular Hrs', 'OT Hrs', 'Late (mins)', 'Undertime (mins)', 'Status', 'Approval'];
+  const rows = records.map(r => {
+    const st = timesheetStatusInfo(r);
+    return [
+      r.employeeName, r.employeeQrId, r.fullDateLabel, minutesToClock(r.timeInMin), minutesToClock(r.timeOutMin),
+      r.manualStatus ? '' : r.breakHours, r.regularHours.toFixed(2), r.otHours.toFixed(2), r.lateMins, r.undertimeMins,
+      st.label, r.approvalStatus,
+    ];
+  });
+  const csv = [header, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `timesheet-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('Timesheet exported (CSV — opens directly in Excel).', 'success');
+}
+
+// ---------- View Details modal ----------
+function openTimesheetDetailModal(record) {
+  const st = timesheetStatusInfo(record);
+  const meta = timesheetEmployeeMeta(record.employeeName);
+  const correctionsHtml = record.corrections.length
+    ? record.corrections.map(c => `
+        <li class="text-xs text-slate-600 dark:text-slate-300 border-l-2 border-gold-400 pl-3 py-1">
+          <p><span class="font-semibold">${c.originalIn} → ${c.correctedIn}</span> in, <span class="font-semibold">${c.originalOut} → ${c.correctedOut}</span> out</p>
+          <p class="text-slate-400">Reason: ${c.reason}</p>
+          <p class="text-slate-400">Requested by ${c.requestedBy}${c.approvedBy ? `, approved by ${c.approvedBy} on ${c.dateApprovedLabel}` : ' — pending approval'}</p>
+        </li>`).join('')
+    : `<li class="text-xs text-slate-400">No corrections filed for this entry.</li>`;
+
+  showModal('View Details', `
+    <div class="space-y-3 text-sm">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <p class="font-semibold text-slate-800 dark:text-slate-100">${record.employeeName}</p>
+          <p class="text-xs text-slate-400 font-mono">${record.employeeQrId} &middot; ${meta.position} &middot; ${meta.department}</p>
+        </div>
+        <span class="text-xs font-semibold px-2.5 py-1 rounded-full ${st.cls} shrink-0">${st.label}</span>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="bg-slate-50 dark:bg-white/5 rounded-lg p-3"><p class="text-[11px] text-slate-400">Date</p><p class="font-medium">${record.fullDateLabel} (${record.weekday})</p></div>
+        <div class="bg-slate-50 dark:bg-white/5 rounded-lg p-3"><p class="text-[11px] text-slate-400">Approval</p><p class="font-medium">${record.approvalStatus}${record.locked ? ' &middot; Locked' : ''}</p></div>
+        <div class="bg-slate-50 dark:bg-white/5 rounded-lg p-3"><p class="text-[11px] text-slate-400">Time In</p><p class="font-medium">${minutesToClock(record.timeInMin)}</p></div>
+        <div class="bg-slate-50 dark:bg-white/5 rounded-lg p-3"><p class="text-[11px] text-slate-400">Time Out</p><p class="font-medium">${minutesToClock(record.timeOutMin)}</p></div>
+        <div class="bg-slate-50 dark:bg-white/5 rounded-lg p-3"><p class="text-[11px] text-slate-400">Regular / OT</p><p class="font-medium">${record.regularHours.toFixed(2)}h / ${record.otHours.toFixed(2)}h</p></div>
+        <div class="bg-slate-50 dark:bg-white/5 rounded-lg p-3"><p class="text-[11px] text-slate-400">Late / Undertime</p><p class="font-medium">${record.lateMins}m / ${record.undertimeMins}m</p></div>
+      </div>
+      <div>
+        <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">Audit trail / corrections</p>
+        <ul class="space-y-2">${correctionsHtml}</ul>
+      </div>
+    </div>
+  `);
+}
+
+// ---------- Edit / Add Time Entry modal ----------
+function openTimesheetEditModal(record) {
+  const isNew = !record;
+  const employeeOptions = employeeRoster.slice().sort()
+    .map(name => `<option value="${name}" ${!isNew && record.employeeName === name ? 'selected' : ''}>${name}</option>`).join('');
+  const dateVal = isNew ? new Date().toISOString().slice(0, 10) : record.dateObj.toISOString().slice(0, 10);
+  const timeInVal = isNew ? '' : minutesToClock(record.timeInMin);
+  const timeOutVal = isNew ? '' : minutesToClock(record.timeOutMin);
+  const breakVal = isNew ? TIMESHEET_DEFAULT_BREAK : (record.breakHours || 0);
+
+  showModal(isNew ? 'Add Time Entry' : 'Edit Timesheet', `
+    <form id="ts-edit-form" class="space-y-4 text-sm">
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Employee</label>
+        <select id="ts-edit-employee" ${isNew ? '' : 'disabled'} class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm">
+          ${isNew ? '<option value="">Select an employee</option>' : ''}${employeeOptions}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Date</label>
+        <input id="ts-edit-date" type="date" value="${dateVal}" ${isNew ? '' : 'disabled'} class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Time In</label>
+          <input id="ts-edit-timein" type="text" placeholder="e.g. 8:00 AM" value="${timeInVal === '—' ? '' : timeInVal}" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Time Out</label>
+          <input id="ts-edit-timeout" type="text" placeholder="e.g. 5:00 PM" value="${timeOutVal === '—' ? '' : timeOutVal}" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Break (hours)</label>
+        <input id="ts-edit-break" type="number" min="0" step="0.25" value="${breakVal}" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div class="flex justify-end gap-3 pt-2">
+        <button type="button" id="ts-edit-cancel" class="text-sm font-semibold text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5">Cancel</button>
+        <button type="submit" class="text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 px-4 py-2 rounded-lg">${isNew ? 'Add Entry' : 'Save Changes'}</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('ts-edit-cancel').addEventListener('click', closeGenericModal);
+  document.getElementById('ts-edit-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const employee = isNew ? document.getElementById('ts-edit-employee').value : record.employeeName;
+    if (!employee) { showToast('Select an employee first.', 'error'); return; }
+    const timeInStr = document.getElementById('ts-edit-timein').value.trim();
+    const timeOutStr = document.getElementById('ts-edit-timeout').value.trim();
+    const breakHours = parseFloat(document.getElementById('ts-edit-break').value) || 0;
+    const timeInMin = timeInStr ? parseClockToMinutes(timeInStr) : null;
+    const timeOutMin = timeOutStr ? parseClockToMinutes(timeOutStr) : null;
+    if (timeInStr && timeInMin == null) { showToast('Could not read that Time In — try e.g. 8:00 AM.', 'error'); return; }
+    if (timeOutStr && timeOutMin == null) { showToast('Could not read that Time Out — try e.g. 5:00 PM.', 'error'); return; }
+
+    if (isNew) {
+      const dateVal2 = document.getElementById('ts-edit-date').value;
+      const d = dateVal2 ? new Date(dateVal2 + 'T00:00:00') : new Date();
+      generateTimesheetForEmployee(employee); // make sure employee meta exists
+      timesheetRecords.push({
+        id: timesheetIdCounter++,
+        employeeName: employee, employeeQrId: employeeQrId(employee),
+        dateObj: d, dateLabel: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        fullDateLabel: d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+        weekday: d.toLocaleDateString(undefined, { weekday: 'long' }),
+        timeInMin, timeOutMin, breakHours, manualStatus: null,
+        approvalStatus: 'Pending', locked: false,
+        requestedBy: 'Admin', approvedBy: null, dateApprovedLabel: null, corrections: [],
+        regularHours: 0, otHours: 0, lateMins: 0, undertimeMins: 0,
+      });
+      showToast(`Time entry added for ${employee} on ${d.toLocaleDateString()}.`, 'success');
+    } else {
+      record.timeInMin = timeInMin; record.timeOutMin = timeOutMin; record.breakHours = breakHours;
+      record.manualStatus = null;
+      showToast(`Timesheet updated for ${record.employeeName} — ${record.fullDateLabel}.`, 'success');
+    }
+    ensureTimesheetData();
+    closeGenericModal();
+    renderTimesheetBody();
+    renderSubPanel('timesheet');
+  });
+}
+
+function parseClockToMinutes(str) {
+  const m = String(str).trim().match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const ampm = (m[3] || '').toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+// ---------- Attendance Correction modal ----------
+function openTimesheetCorrectionModal(record) {
+  showModal('Request Correction', `
+    <form id="ts-correction-form" class="space-y-4 text-sm">
+      <div class="bg-slate-50 dark:bg-white/5 rounded-lg p-3 text-xs text-slate-500 dark:text-slate-400">
+        ${record.employeeName} &middot; ${record.fullDateLabel}<br>
+        Original Time In: <span class="font-semibold text-slate-700 dark:text-slate-200">${minutesToClock(record.timeInMin)}</span> &middot;
+        Original Time Out: <span class="font-semibold text-slate-700 dark:text-slate-200">${minutesToClock(record.timeOutMin)}</span>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Corrected Time In</label>
+          <input id="ts-corr-in" type="text" placeholder="e.g. 8:00 AM" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Corrected Time Out</label>
+          <input id="ts-corr-out" type="text" placeholder="e.g. 5:03 PM" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Reason</label>
+        <input id="ts-corr-reason" type="text" placeholder="e.g. Forgot to clock out" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Requested By</label>
+        <input id="ts-corr-requestedby" type="text" placeholder="e.g. ${record.employeeName}" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      <div class="flex justify-end gap-3 pt-2">
+        <button type="button" id="ts-corr-cancel" class="text-sm font-semibold text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5">Cancel</button>
+        <button type="submit" class="text-sm font-semibold text-brand-900 bg-gold-400 hover:bg-gold-500 px-4 py-2 rounded-lg">Submit Correction</button>
+      </div>
+    </form>
+  `);
+
+  document.getElementById('ts-corr-cancel').addEventListener('click', closeGenericModal);
+  document.getElementById('ts-correction-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const inStr = document.getElementById('ts-corr-in').value.trim();
+    const outStr = document.getElementById('ts-corr-out').value.trim();
+    const reason = document.getElementById('ts-corr-reason').value.trim();
+    const requestedBy = document.getElementById('ts-corr-requestedby').value.trim() || record.employeeName;
+    if (!reason) { showToast('A reason is required for the correction.', 'error'); return; }
+    const inMin = inStr ? parseClockToMinutes(inStr) : record.timeInMin;
+    const outMin = outStr ? parseClockToMinutes(outStr) : record.timeOutMin;
+    if (inStr && inMin == null) { showToast('Could not read that Time In — try e.g. 8:00 AM.', 'error'); return; }
+    if (outStr && outMin == null) { showToast('Could not read that Time Out — try e.g. 5:00 PM.', 'error'); return; }
+
+    record.corrections.push({
+      originalIn: minutesToClock(record.timeInMin), originalOut: minutesToClock(record.timeOutMin),
+      correctedIn: minutesToClock(inMin), correctedOut: minutesToClock(outMin),
+      reason, requestedBy, approvedBy: 'Admin',
+      dateApprovedLabel: new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+    });
+    record.timeInMin = inMin; record.timeOutMin = outMin;
+    record.manualStatus = null;
+    record.approvalStatus = 'Pending';
+    ensureTimesheetData();
+    showToast(`Correction applied for ${record.employeeName} — ${record.fullDateLabel}.`, 'success');
+    closeGenericModal();
+    renderTimesheetBody();
+    renderSubPanel('timesheet');
+  });
+}
+
+// ---------- Generic small modal shell, reused by the three modals above ----------
+function showModal(title, bodyHtml) {
+  let overlay = document.getElementById('generic-modal-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'generic-modal-overlay';
+    overlay.className = 'fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4';
+    overlay.innerHTML = `
+      <div class="bg-white dark:bg-ink-700 rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto scrollbar-thin fade-in">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/10">
+          <h3 id="generic-modal-title" class="font-bold text-slate-800 dark:text-slate-100"></h3>
+          <button id="generic-modal-close" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none">&times;</button>
+        </div>
+        <div id="generic-modal-body" class="px-6 py-5"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeGenericModal(); });
+    document.getElementById('generic-modal-close').addEventListener('click', closeGenericModal);
+  }
+  document.getElementById('generic-modal-title').textContent = title;
+  document.getElementById('generic-modal-body').innerHTML = bodyHtml;
+  overlay.classList.remove('hidden');
+}
+function closeGenericModal() {
+  const overlay = document.getElementById('generic-modal-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
 function attachDynamicListeners() {
   document.querySelectorAll('.nav-item[data-panel]').forEach(btn => {
     btn.onclick = () => setActivePanel(btn.dataset.panel);
@@ -1665,11 +2677,6 @@ function renderEmployeeListGrid() {
       ? `<img src="${e.photo}" alt="${e.name || 'Employee'}" class="w-full h-full object-cover">`
       : `<svg class="w-14 h-14 text-slate-300 dark:text-white/20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>`;
 
-    // FIX: dati ay `e.photo ? '<button...delete...>' : ''` — nawawala ang
-    // delete button kapag walang photo (gaya ng employee na si Jason sa
-    // screenshot). Ngayon ay LAGING lumalabas ang delete button, may photo
-    // man o wala, dahil ang tinatanggal talaga dito ay ang buong employee
-    // record (soft delete), hindi lang ang photo.
     const deletePhotoBtn = `<button type="button" class="btn-delete-photo absolute top-2 left-2 w-7 h-7 rounded-full bg-red-600/90 hover:bg-red-700 text-white flex items-center justify-center transition"
            data-employee-id="${e.employeeId}" data-name="${(e.name || '').replace(/"/g, '&quot;')}" title="Delete employee">
            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-7 0v12a2 2 0 002 2h6a2 2 0 002-2V7"/></svg>
@@ -1705,10 +2712,6 @@ function renderEmployeeListGrid() {
   }).join('');
 }
 
-// Event delegation para sa "Delete Photo" button - hindi natin kailangang
-// mag-attach ng listener per-card kasi re-rendered ang buong grid tuwing
-// nagbabago ang data (innerHTML replace). Isang beses lang natin ito
-// ina-attach sa grid container mismo.
 function attachEmployeeListDelegatedEvents() {
   const grid = document.getElementById('employee-list-grid');
   if (!grid || grid.dataset.delegated) return;
@@ -1727,10 +2730,6 @@ async function deleteEmployeePhoto(employeeId, name) {
   if (!confirmed) return;
  
   try {
-    // MALI - photo lang ito, hindi buong employee:
-    // await apiDelete(`/api/employees/${encodeURIComponent(employeeId)}/photo`);
- 
-    // TAMA - ito na ang soft-delete endpoint na buong employee record ang ginagalaw:
     await apiDelete(`/api/employees/${encodeURIComponent(employeeId)}`);
  
     showToast(`${name || employeeId} ay inilipat sa Delete History.`, 'success');
@@ -1865,15 +2864,16 @@ async function loadMonitoring() {
 }
 
 function renderMonitoringStats() {
-  const total = monitoringLogs.length;
 
+  const completedLogs = monitoringLogs.filter(l => findMatchingLocationCheckin(l) !== null);
+  const total = completedLogs.length;
 
-  const verified = monitoringLogs.filter(l =>
-    (l.status || '').toLowerCase() === 'verified' && findMatchingLocationCheckin(l) !== null
+  const verified = completedLogs.filter(l =>
+    (l.status || '').toLowerCase() === 'verified'
   ).length;
 
-  const avgMatch = total ? Math.round(monitoringLogs.reduce((sum, l) => sum + (Number(l.matchPercentage) || 0), 0) / total) : 0;
-  const flagged = monitoringLogs.filter(l => (Number(l.matchPercentage) || 0) < MIN_ACCESS_SCORE_PERCENT).length;
+  const avgMatch = total ? Math.round(completedLogs.reduce((sum, l) => sum + (Number(l.matchPercentage) || 0), 0) / total) : 0;
+  const flagged = completedLogs.filter(l => (Number(l.matchPercentage) || 0) < MIN_ACCESS_SCORE_PERCENT).length;
 
   const elTotal = document.getElementById('mon-stat-total');
   const elVerified = document.getElementById('mon-stat-verified');
@@ -1894,7 +2894,17 @@ function formatScanTimestamp(ts) {
   };
 }
 
+
 function findMatchingLocationCheckin(log) {
+  if (!log.id && !log.qrId) return null;
+
+  if (log.id) {
+    const byScanId = monitoringLocationCheckins.find(
+      c => c.scan_id != null && String(c.scan_id) === String(log.id)
+    );
+    if (byScanId) return byScanId;
+  }
+
   if (!log.qrId || !log.timestamp) return null;
   const scanTime = new Date(log.timestamp).getTime();
   if (isNaN(scanTime)) return null;
@@ -1906,7 +2916,8 @@ function findMatchingLocationCheckin(log) {
     if (normId(c.employee_id) !== logId) return false;
     const checkinTime = new Date(c.timestamp).getTime();
     if (isNaN(checkinTime)) return false;
-    return checkinTime >= (scanTime - windowMs) && checkinTime <= (scanTime + windowMs);
+  
+    return checkinTime >= scanTime && checkinTime <= (scanTime + windowMs);
   });
 
   if (!candidates.length) return null;
@@ -1985,7 +2996,7 @@ function renderMonitoringGrid() {
     if (loc) {
       const lat = Number(loc.lat);
       const lng = Number(loc.lng);
-      const delta = 0.0035; // laki ng bounding box paligid ng pin
+      const delta = 0.0035;
       const bbox = [lng - delta, lat - delta, lng + delta, lat + delta]
         .map(v => v.toFixed(6)).join('%2C');
       const marker = `${lat.toFixed(6)}%2C${lng.toFixed(6)}`;
@@ -2020,14 +3031,11 @@ function renderMonitoringGrid() {
             <span class="text-xs font-bold shrink-0" style="color:${pctColor};">${pct}%</span>
           </div>
 
-          <!-- Step indicator: dalawang tuldok, isang beses lang isang step ang
-               ipinapakita sa isang pagkakataon; "Next"/"Back" ang tumatawid. -->
           <div class="flex items-center justify-center gap-1.5 mb-3">
             <span class="mon-dot-photo w-1.5 h-1.5 rounded-full ${onPhoto ? 'bg-brand-500' : 'bg-slate-200 dark:bg-white/15'}"></span>
             <span class="mon-dot-location w-1.5 h-1.5 rounded-full ${!onPhoto ? 'bg-brand-500' : 'bg-slate-200 dark:bg-white/15'}"></span>
           </div>
 
-          <!-- STEP 1: pangalan/ID lang (ang larawan mismo ay nasa itaas na) -->
           <div class="mon-step-photo-info ${onPhoto ? '' : 'hidden'}">
             <div class="flex items-center gap-1.5 mb-2">
               <span class="w-5 h-5 rounded-full bg-slate-700 dark:bg-white/15 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
@@ -2044,7 +3052,6 @@ function renderMonitoringGrid() {
             </button>
           </div>
 
-          <!-- STEP 2: coordinates lang (ang mapa mismo ay nasa itaas na, pumalit sa larawan) -->
           <div class="mon-step-location-info ${onPhoto ? 'hidden' : ''}">
             <div class="flex items-center gap-1.5 mb-2">
               <span class="w-5 h-5 rounded-full bg-slate-700 dark:bg-white/15 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
@@ -2234,13 +3241,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     bellDropdown.classList.add('hidden');
   });
 
-  // -----------------------------------------------------------------
-  // LOGOUT — dating "toast lang, walang tunay na logout" na bug.
-  // Ngayon: tumatawag talaga sa /api/admin/logout (kaya na-clea-clear
-  // ang session sa server), ni-reset ang CSRF token cache (dahil
-  // nawawalan ng bisa ang lumang token pagkatapos mag-session.clear()),
-  // tapos saka nagre-redirect pabalik sa /loginadmin.
-  // -----------------------------------------------------------------
   document.querySelectorAll('.menu-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const action = btn.dataset.action;
@@ -2314,7 +3314,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 });
+(function () {
+  const IDLE_LIMIT_MS = 60 * 1000; // 1 minuto
+  let idleTimer = null;
 
+  function doAutoLogout() {
+    // Gamitin ang secureFetch kung available (CSRF-aware), fallback sa plain fetch
+    const logoutCall = typeof secureFetch === 'function'
+      ? secureFetch('/api/admin/logout', { method: 'POST' })
+      : fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+
+    logoutCall
+      .catch((err) => console.error('Auto-logout request failed:', err))
+      .finally(() => {
+        window.location.href = '/loginadmin';
+      });
+  }
+
+  function resetIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(doAutoLogout, IDLE_LIMIT_MS);
+  }
+
+  // Mga event na itinuturing na "may aktibidad" ang user
+  ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach((evt) => {
+    document.addEventListener(evt, resetIdleTimer, { passive: true });
+  });
+
+  // Simulan ang timer sa unang load ng page
+  resetIdleTimer();
+})();
 </script>
-</body>
+</body></document_content></document>
 </html>

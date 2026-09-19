@@ -175,6 +175,9 @@
     </div>
 </div>
 
+<!-- CSRF helper — dapat naka-load bago ang script sa ibaba, dahil ginagamit
+     ng scanFace() at confirmAttendance() ang secureFetch() na mula dito. -->
+<script src="{{ url_for('static', filename='csrf_helper.js') }}"></script>
 <script>
 
 const video = document.getElementById("video");
@@ -211,7 +214,7 @@ async function confirmAttendance(scanType) {
     document.getElementById("status").innerText = "Saving attendance...";
 
     try {
-        const response = await fetch("/deepfacerecog/log-attendance", {
+        const response = await secureFetch("/deepfacerecog/log-attendance", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -360,7 +363,7 @@ async function scanFace() {
 
     try {
 
-        const response = await fetch("/deepfacerecog/scan", {
+        const response = await secureFetch("/deepfacerecog/scan", {
        
             method: "POST",
             headers: { "Content-Type": "application/json" },

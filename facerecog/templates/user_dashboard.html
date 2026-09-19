@@ -11,7 +11,7 @@
     theme: {
       extend: {
         colors: {
-          brand: { 50:'#eef7ec', 100:'#d7edd1', 500:'#5a9c3f', 600:'#47812f', 700:'#356123', 900:'#0f1a0c' },
+          brand: { 50:'#eef2f8', 100:'#d7e0ee', 500:'#1e3a6d', 600:'#15294f', 700:'#0f1e3d', 900:'#060b16' },
           ink:   { 900:'#14171a', 800:'#1c2023', 700:'#262b2f' },
           gold:  { 400:'#f4b942', 500:'#e8a52c', 600:'#c98a1c' },
         },
@@ -35,13 +35,13 @@
   #main-content { transition: margin-left .28s ease; }
   #sidebar-overlay { transition: opacity .25s ease; }
 
-  body { background:#fbe8e8; color:#1c2023; transition: background-color .2s ease, color .2s ease; overflow-x:hidden; }
-  .dark body { background:#102240; color:#e7ece9; }
+  body { background:#f6f3ec; color:#1c2023; transition: background-color .2s ease, color .2s ease; overflow-x:hidden; }
+  .dark body { background:#0b1830; color:#e7ece9; }
 
   .fade-in { animation: fadeIn .25s ease-out; }
   @keyframes fadeIn { from { opacity:0; transform:translateY(4px);} to { opacity:1; transform:translateY(0);} }
 
-  .step-line { background: linear-gradient(90deg, #5a9c3f 0%, #5a9c3f var(--p, 0%), rgba(148,163,184,.35) var(--p, 0%)); }
+  .step-line { background: linear-gradient(90deg, #1e3a6d 0%, #1e3a6d var(--p, 0%), rgba(148,163,184,.35) var(--p, 0%)); }
 
   #resultOverlay { backdrop-filter: blur(6px); z-index: 2000; }
 
@@ -73,6 +73,15 @@
   @media (max-width: 380px) {
     #step1-dot, #step2-dot, #step3-dot { width: 1.5rem; height: 1.5rem; font-size: 0.65rem; }
   }
+
+  /* --- Sub-tabs used inside Attendance Summary --- */
+  .subtab-btn { transition: background-color .15s ease, color .15s ease; }
+  .subtab-active { background-color:#f4b942; color:#14171a; }
+  .subtab-inactive { color:#64748b; }
+  .subtab-inactive:hover { background-color: rgba(148,163,184,.15); }
+
+  /* --- Badge for unread notifications --- */
+  #notif-badge { min-width: 1.1rem; height: 1.1rem; }
 </style>
 </head>
 <body>
@@ -81,31 +90,65 @@
 
   <div id="sidebar-overlay" class="hidden opacity-0 fixed inset-0 bg-black/50 z-30 md:hidden"></div>
 
-  <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 -translate-x-full md:translate-x-0 shrink-0 text-black flex flex-col justify-between dark:border-r dark:border-white/5" style="background-color:#be780d;">
+  <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 -translate-x-full md:translate-x-0 shrink-0 text-white flex flex-col justify-between dark:border-r dark:border-white/5" style="background-color:#b17207;">
     <div id="sidebar-scroll" class="overflow-y-auto flex-1 min-h-0">
       <div class="flex flex-col items-center justify-center gap-3 px-5 py-6">
         <div class="w-20 h-20 rounded-full ring-2 ring-white/80 overflow-hidden shrink-0 bg-white/30 flex items-center justify-center relative">
           <svg id="sidebar-avatar-fallback" class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>
           <img id="sidebar-avatar-img" class="hidden absolute inset-0 w-full h-full object-cover" alt="Profile photo">
         </div>
-        <p id="sidebar-employee-name" class="text-center text-sm font-semibold text-black">Employee</p>
-        <p class="text-center text-[10px] text-gray-700 break-all">inquiries.cre8tedtravel@gmail.com</p>
+        <p id="sidebar-employee-name" class="text-center text-sm font-semibold text-white">Employee</p>
+        <p class="text-center text-[10px] text-white/60 break-all">inquiries.cre8tedtravel@gmail.com</p>
       </div>
 
       <nav class="mt-2 px-3 space-y-1" id="sidebar-nav">
-        <button data-panel="attendance" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-violet-600 text-white font-semibold text-sm" title="Attendance">
+        <button data-panel="attendance" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gold-400 text-ink-900 font-semibold text-sm" title="Attendance">
           <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/></svg>
           <span class="sidebar-label whitespace-nowrap">Time In / Time Out</span>
         </button>
-        <button data-panel="account" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-black/80 hover:bg-black/10 font-semibold text-sm transition" title="My Account">
+
+        <button data-panel="summary" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/80 hover:bg-white/10 font-semibold text-sm transition" title="Attendance Summary">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17V9m3 8V5m3 12v-4M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          <span class="sidebar-label whitespace-nowrap">Attendance Summary</span>
+        </button>
+
+        <button data-panel="leave" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/80 hover:bg-white/10 font-semibold text-sm transition" title="Leave Request">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <span class="sidebar-label whitespace-nowrap">Leave Request</span>
+        </button>
+
+        <button data-panel="notifications" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/80 hover:bg-white/10 font-semibold text-sm transition relative" title="Notifications & Announcements">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+          <span class="sidebar-label whitespace-nowrap">Notifications</span>
+          <span id="notif-badge" class="hidden absolute right-3 top-2 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1">0</span>
+        </button>
+
+        <button data-panel="report" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/80 hover:bg-white/10 font-semibold text-sm transition" title="Report / Concern">
+          <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.007M4.93 19h14.14a1.5 1.5 0 001.32-2.22l-7.07-13a1.5 1.5 0 00-2.64 0l-7.07 13A1.5 1.5 0 004.93 19z"/></svg>
+          <span class="sidebar-label whitespace-nowrap">Report / Concern</span>
+        </button>
+
+        <button data-panel="account" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/80 hover:bg-white/10 font-semibold text-sm transition" title="My Account">
           <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14c-4.4 0-8 2-8 5v1h16v-1c0-3-3.6-5-8-5z"/></svg>
           <span class="sidebar-label whitespace-nowrap">My Account</span>
         </button>
+
+
       </nav>
+
+      <div class="mt-4 px-2">
+        <img src="{{ url_for('static', filename='background.png') }}" style="background:none" class="w-full object-contain" alt="">
+      </div>
     </div>
 
-    <div class="relative px-5 pb-5 pt-8 bg-brand-700/40 overflow-hidden sidebar-label dark:bg-black/20 shrink-0">
+    <div class="relative px-5 pb-5 pt-8 bg-black/20 overflow-hidden sidebar-label shrink-0">
       <p class="text-sm font-semibold leading-snug">Empowering People.<br>Delivering Journeys.</p>
+      <svg class="absolute right-2 bottom-2 w-20 h-20 opacity-80" viewBox="0 0 64 64" fill="none">
+        <rect x="30" y="30" width="14" height="22" rx="2" fill="#f4b942" fill-opacity="0.9"/>
+        <rect x="10" y="38" width="12" height="16" rx="2" fill="#f4b942" fill-opacity="0.7"/>
+        <circle cx="36" cy="52" r="2" fill="#060b16"/>
+        <circle cx="16" cy="54" r="2" fill="#060b16"/>
+      </svg>
     </div>
   </aside>
 
@@ -148,8 +191,6 @@
       <section id="panel-attendance" class="panel">
 
         <div id="flow-container" class="mx-auto w-full transition-all duration-300">
-
-          <!-- 3-step tracker: QR must succeed before Face, Face before Location. -->
           <div class="flex items-center gap-1.5 sm:gap-2 mb-5 px-1">
             <div class="flex items-center gap-1 sm:gap-1.5 min-w-0">
               <div id="step1-dot" class="w-7 h-7 rounded-full bg-gold-400 text-ink-900 flex items-center justify-center text-xs font-bold shrink-0">1</div>
@@ -168,24 +209,18 @@
           </div>
 
           <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-            <!-- STEP 1: real existing QR scanner page, embedded as-is -->
+          
             <div id="step-qr-wrap">
               <iframe id="qr-frame" src="/qrcodescanner/" title="Scan QR Badge"
                 class="w-full border-0"></iframe>
             </div>
 
-            <!-- STEP 2: real existing face verification page, embedded as-is,
-                 inside the SAME responsive width/frame used by the other
-                 steps (no more forced landscape/2-column widening). The
-                 page loaded inside (/deepfacerecog/) keeps its own
-                 UI/design completely untouched and simply scales with the
-                 iframe like a normal responsive embed. -->
             <div id="step-face-wrap" class="hidden">
               <iframe id="face-frame" src="about:blank" title="Face Verification"
                 class="w-full border-0"></iframe>
             </div>
 
-            <!-- STEP 3: Location check-in (GPS only - no photo). -->
+        
             <div id="step-location-wrap" class="hidden p-4 sm:p-5 space-y-4">
 
               <div id="scan-frame" class="loc-pin-wrap rounded-2xl">
@@ -222,6 +257,140 @@
 
       </section>
 
+    
+      <section id="panel-summary" class="panel hidden">
+        <div class="max-w-3xl mx-auto space-y-4">
+
+          
+          <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-1.5 flex gap-1 overflow-x-auto">
+            <button data-subtab="today" class="subtab-btn subtab-active flex-1 whitespace-nowrap text-sm font-semibold px-3 py-2 rounded-xl">Today's Attendance</button>
+            <button data-subtab="history" class="subtab-btn subtab-inactive flex-1 whitespace-nowrap text-sm font-semibold px-3 py-2 rounded-xl">Attendance History</button>
+            <button data-subtab="overtime" class="subtab-btn subtab-inactive flex-1 whitespace-nowrap text-sm font-semibold px-3 py-2 rounded-xl">Overtime</button>
+          </div>
+
+         
+          <div id="subtab-today" class="subtab-panel space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-4">
+                <p class="text-xs text-slate-400">Time In</p>
+                <p id="today-time-in" class="text-lg font-bold text-slate-800 dark:text-slate-100 mt-1">—</p>
+              </div>
+              <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-4">
+                <p class="text-xs text-slate-400">Time Out</p>
+                <p id="today-time-out" class="text-lg font-bold text-slate-800 dark:text-slate-100 mt-1">—</p>
+              </div>
+            </div>
+            <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-4">
+              <p class="text-xs text-slate-400 mb-1">Status</p>
+              <p id="today-status" class="text-sm font-semibold text-slate-700 dark:text-slate-200">Wala pang time in ngayong araw.</p>
+            </div>
+          </div>
+
+          <!-- Attendance History -->
+          <div id="subtab-history" class="subtab-panel hidden space-y-3">
+            <div id="history-list" class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100 dark:divide-white/5">
+              <p class="p-4 text-sm text-slate-400">Ikinakarga ang history…</p>
+            </div>
+          </div>
+
+          <!-- Overtime -->
+          <div id="subtab-overtime" class="subtab-panel hidden space-y-3">
+            <div id="overtime-list" class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100 dark:divide-white/5">
+              <p class="p-4 text-sm text-slate-400">Walang overtime record na makikita.</p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+     
+      <section id="panel-leave" class="panel hidden">
+        <div class="max-w-2xl mx-auto space-y-5">
+
+          <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+            <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 mb-4">File a Leave Request</h3>
+            <form id="leave-request-form" class="space-y-4">
+              <div>
+                <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Leave Type</label>
+                <select id="leave-type" class="mt-1 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-transparent px-3 py-2.5 text-sm">
+                  <option>Vacation Leave</option>
+                  <option>Sick Leave</option>
+                  <option>Emergency Leave</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Start Date</label>
+                  <input type="date" id="leave-start" class="mt-1 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-transparent px-3 py-2.5 text-sm">
+                </div>
+                <div>
+                  <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">End Date</label>
+                  <input type="date" id="leave-end" class="mt-1 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-transparent px-3 py-2.5 text-sm">
+                </div>
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Reason</label>
+                <textarea id="leave-reason" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-transparent px-3 py-2.5 text-sm" placeholder="Ilagay ang dahilan…"></textarea>
+              </div>
+              <button type="submit" class="w-full bg-gold-400 text-ink-900 font-bold py-3 rounded-xl hover:bg-gold-500 transition">Submit Request</button>
+            </form>
+          </div>
+
+          <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+            <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3">My Leave Requests</h3>
+            <div id="leave-history-list" class="space-y-2 text-sm text-slate-500 dark:text-slate-400">
+              <p>Wala ka pang naisumiteng leave request.</p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <section id="panel-notifications" class="panel hidden">
+        <div class="max-w-2xl mx-auto space-y-4">
+          <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+            <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3">Notifications & Announcements</h3>
+            <div id="notifications-list" class="space-y-2">
+              <p class="text-sm text-slate-400">Wala pang bagong announcement.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+     
+      <section id="panel-report" class="panel hidden">
+        <div class="max-w-2xl mx-auto space-y-5">
+          <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+            <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 mb-4">Magsumite ng Report o Concern</h3>
+            <form id="report-concern-form" class="space-y-4">
+              <div>
+                <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Category</label>
+                <select id="report-category" class="mt-1 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-transparent px-3 py-2.5 text-sm">
+                  <option>Attendance Issue</option>
+                  <option>Schedule Concern</option>
+                  <option>Technical Problem</option>
+                  <option>Security Conern</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Details</label>
+                <textarea id="report-details" rows="4" class="mt-1 w-full rounded-xl border border-slate-200 dark:border-white/10 bg-transparent px-3 py-2.5 text-sm" placeholder="Ilarawan ang iyong concern…"></textarea>
+              </div>
+              <button type="submit" class="w-full bg-gold-400 text-ink-900 font-bold py-3 rounded-xl hover:bg-gold-500 transition">Submit Report</button>
+            </form>
+          </div>
+
+          <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
+            <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 mb-3">My Reports</h3>
+            <div id="report-history-list" class="space-y-2 text-sm text-slate-500 dark:text-slate-400">
+              <p>Wala ka pang naisumiteng report o concern.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="panel-account" class="panel hidden">
         <div class="max-w-2xl mx-auto space-y-5">
 
@@ -250,7 +419,6 @@
   </div>
 </div>
 
-<!-- Full-screen result overlay after the flow completes -->
 <div id="resultOverlay" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center p-4">
   <div class="bg-white dark:bg-ink-700 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl w-full max-w-sm p-7 text-center fade-in">
     <div id="result-icon" class="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl"></div>
@@ -335,6 +503,11 @@ function setStep(activeStep) {
   connectors[2].style.setProperty('--p', activeStep > 2 ? '100%' : '0%');
 }
 
+// --- Identity state ---------------------------------------------------
+let loggedInEmployeeId = null;
+let loggedInName = null;
+let loggedInPhoto = null;
+
 let currentEmployeeId = null;
 let currentScanId = null;
 
@@ -362,8 +535,8 @@ function setProfilePhoto(photo) {
 }
 
 
-const NAV_ACTIVE = 'nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-violet-600 text-white font-semibold text-sm';
-const NAV_INACTIVE = 'nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-black/80 hover:bg-black/10 font-semibold text-sm transition';
+const NAV_ACTIVE = 'nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gold-400 text-ink-900 font-semibold text-sm';
+const NAV_INACTIVE = 'nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/80 hover:bg-white/10 font-semibold text-sm transition relative';
 function showPanel(panelName) {
   document.querySelectorAll('.panel').forEach((el) => el.classList.add('hidden'));
   const target = document.getElementById(`panel-${panelName}`);
@@ -374,6 +547,10 @@ function showPanel(panelName) {
   });
 
   if (panelName === 'account') loadMySchedule();
+  if (panelName === 'summary') loadAttendanceSummary();
+  if (panelName === 'leave') loadLeaveRequests();
+  if (panelName === 'notifications') loadNotifications();
+  if (panelName === 'report') loadReports();
 
   if (!isDesktop()) closeMobileSidebar();
 }
@@ -382,7 +559,194 @@ document.getElementById('sidebar-nav').addEventListener('click', (e) => {
   if (btn) showPanel(btn.dataset.panel);
 });
 
+const SUBTAB_ACTIVE = 'subtab-btn subtab-active flex-1 whitespace-nowrap text-sm font-semibold px-3 py-2 rounded-xl';
+const SUBTAB_INACTIVE = 'subtab-btn subtab-inactive flex-1 whitespace-nowrap text-sm font-semibold px-3 py-2 rounded-xl';
+document.querySelectorAll('[data-subtab]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const name = btn.dataset.subtab;
+    document.querySelectorAll('[data-subtab]').forEach((b) => {
+      b.className = b.dataset.subtab === name ? SUBTAB_ACTIVE : SUBTAB_INACTIVE;
+    });
+    document.querySelectorAll('.subtab-panel').forEach((p) => p.classList.add('hidden'));
+    document.getElementById(`subtab-${name}`).classList.remove('hidden');
+  });
+});
+
+async function loadAttendanceSummary() {
+  if (!currentEmployeeId) return;
+  try {
+    // TODO: point this to your actual attendance-summary endpoint
+    const res = await fetch(`/api/attendance/today?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.timeIn) document.getElementById('today-time-in').textContent = data.timeIn;
+    if (data.timeOut) document.getElementById('today-time-out').textContent = data.timeOut;
+    if (data.status) document.getElementById('today-status').textContent = data.status;
+  } catch (err) {
+    console.error('Could not load attendance summary:', err);
+  }
+
+  try {
+    const res = await fetch(`/api/attendance/history?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
+    if (res.ok) {
+      const data = await res.json();
+      const rows = data.history || [];
+      const list = document.getElementById('history-list');
+      list.innerHTML = rows.length ? rows.map(r => `
+        <div class="p-3.5 flex items-center justify-between text-sm">
+          <span class="text-slate-500 dark:text-slate-400">${r.date || '—'}</span>
+          <span class="text-slate-700 dark:text-slate-200 font-medium">${r.timeIn || '—'} – ${r.timeOut || '—'}</span>
+        </div>`).join('') : '<p class="p-4 text-sm text-slate-400">Walang history na makikita.</p>';
+    }
+  } catch (err) {
+    console.error('Could not load attendance history:', err);
+  }
+
+  try {
+    const res = await fetch(`/api/attendance/overtime?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
+    if (res.ok) {
+      const data = await res.json();
+      const rows = data.overtime || [];
+      const list = document.getElementById('overtime-list');
+      list.innerHTML = rows.length ? rows.map(r => `
+        <div class="p-3.5 flex items-center justify-between text-sm">
+          <span class="text-slate-500 dark:text-slate-400">${r.date || '—'}</span>
+          <span class="text-slate-700 dark:text-slate-200 font-medium">${r.hours || '0'} hrs</span>
+        </div>`).join('') : '<p class="p-4 text-sm text-slate-400">Walang overtime record na makikita.</p>';
+    }
+  } catch (err) {
+    console.error('Could not load overtime:', err);
+  }
+}
+
+document.getElementById('leave-request-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    employee_id: currentEmployeeId || '',
+    type: document.getElementById('leave-type').value,
+    start_date: document.getElementById('leave-start').value,
+    end_date: document.getElementById('leave-end').value,
+    reason: document.getElementById('leave-reason').value,
+  };
+  try {
+    // TODO: point this to your actual leave-request endpoint
+    const res = await secureFetch('/api/leave-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      e.target.reset();
+      loadLeaveRequests();
+    }
+  } catch (err) {
+    console.error('Could not submit leave request:', err);
+  }
+});
+
+async function loadLeaveRequests() {
+  if (!currentEmployeeId) return;
+  const container = document.getElementById('leave-history-list');
+  try {
+    const res = await fetch(`/api/leave-request?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const rows = data.requests || [];
+    container.innerHTML = rows.length ? rows.map(r => `
+      <div class="border border-slate-100 dark:border-white/10 rounded-xl p-3.5">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span class="text-sm font-semibold text-slate-800 dark:text-slate-100">${r.type || '—'}</span>
+          <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full text-amber-600 bg-amber-50 dark:bg-amber-500/10">${r.status || 'Pending'}</span>
+        </div>
+        <p class="text-xs text-slate-400">${r.start_date || '—'} – ${r.end_date || '—'}</p>
+      </div>`).join('') : '<p>Wala ka pang naisumiteng leave request.</p>';
+  } catch (err) {
+    console.error('Could not load leave requests:', err);
+  }
+}
+
+async function loadNotifications() {
+  const container = document.getElementById('notifications-list');
+  try {
+    const res = await fetch('/api/notifications', { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const items = data.notifications || [];
+    const unread = items.filter(n => !n.read).length;
+    const badge = document.getElementById('notif-badge');
+    if (unread > 0) { badge.textContent = unread; badge.classList.remove('hidden'); }
+    else { badge.classList.add('hidden'); }
+
+    container.innerHTML = items.length ? items.map(n => `
+      <div class="border border-slate-100 dark:border-white/10 rounded-xl p-3.5">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span class="text-sm font-semibold text-slate-800 dark:text-slate-100">${n.title || 'Announcement'}</span>
+          <span class="text-[11px] text-slate-400">${n.date || ''}</span>
+        </div>
+        <p class="text-sm text-slate-500 dark:text-slate-400">${n.message || ''}</p>
+      </div>`).join('') : '<p class="text-sm text-slate-400">Wala pang bagong announcement.</p>';
+  } catch (err) {
+    console.error('Could not load notifications:', err);
+  }
+}
+
+document.getElementById('report-concern-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const payload = {
+    employee_id: currentEmployeeId || '',
+    category: document.getElementById('report-category').value,
+    details: document.getElementById('report-details').value,
+  };
+  try {
+    // TODO: point this to your actual report/concern endpoint
+    const res = await secureFetch('/api/report-concern', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      e.target.reset();
+      loadReports();
+    }
+  } catch (err) {
+    console.error('Could not submit report:', err);
+  }
+});
+
+async function loadReports() {
+  if (!currentEmployeeId) return;
+  const container = document.getElementById('report-history-list');
+  try {
+    const res = await fetch(`/api/report-concern?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const data = await res.json();
+    const rows = data.reports || [];
+    container.innerHTML = rows.length ? rows.map(r => `
+      <div class="border border-slate-100 dark:border-white/10 rounded-xl p-3.5">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <span class="text-sm font-semibold text-slate-800 dark:text-slate-100">${r.category || '—'}</span>
+          <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full text-amber-600 bg-amber-50 dark:bg-amber-500/10">${r.status || 'Open'}</span>
+        </div>
+        <p class="text-xs text-slate-400">${r.details || ''}</p>
+      </div>`).join('') : '<p>Wala ka pang naisumiteng report o concern.</p>';
+  } catch (err) {
+    console.error('Could not load reports:', err);
+  }
+}
+
 window.onQrScanSuccess = function (employeeId, name, photo) {
+  if (loggedInEmployeeId && employeeId !== loggedInEmployeeId) {
+    hideAllStepPanels();
+    document.getElementById('step-qr-wrap').classList.remove('hidden');
+    showResult(
+      'error',
+      'Maling QR Code',
+      'Sarili mo lang na badge ang pwedeng i-scan sa account na ito.'
+    );
+    document.getElementById('qr-frame').src = `/qrcodescanner/?t=${Date.now()}`;
+    return;
+  }
+
   currentEmployeeId = employeeId;
   document.getElementById('sidebar-employee-name').textContent = name || 'Employee';
   setProfilePhoto(photo);
@@ -436,8 +800,8 @@ function renderLocationOnMap(lat, lng, accuracy) {
     } else {
       locAccuracyCircle = L.circle([lat, lng], {
         radius: accuracy,
-        color: '#5a9c3f',
-        fillColor: '#5a9c3f',
+        color: '#e8a52c',
+        fillColor: '#e8a52c',
         fillOpacity: 0.15,
         weight: 1,
       }).addTo(locMap);
@@ -559,10 +923,6 @@ async function handleLocationCapture() {
   btnCapture.textContent = 'Submitting…';
 
   try {
-    // PALITAN NA GAMIT ANG secureFetch — awtomatikong nagsasama ng CSRF
-    // token sa header. Dating plain fetch() ito na mabe-block ng
-    // Flask-WTF CSRFProtect ngayong naka-enable na ito sa lahat ng POST
-    // endpoints kasama ang /api/checkin.
     const res = await secureFetch(CHECKIN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -644,13 +1004,15 @@ function resetToQrStep() {
   document.getElementById('step-qr-wrap').classList.remove('hidden');
   document.getElementById('step-qr-wrap').classList.add('fade-in');
   setStep(1);
-  currentEmployeeId = null;
-  currentScanId = null;
-  document.getElementById('sidebar-employee-name').textContent = 'Employee';
-  document.getElementById('account-employee-id').textContent = '—';
-  setProfilePhoto(null);
 
-  
+  currentEmployeeId = loggedInEmployeeId;
+  currentScanId = null;
+
+  document.getElementById('sidebar-employee-name').textContent = loggedInName || 'Employee';
+  document.getElementById('account-employee-id').textContent = loggedInEmployeeId || '—';
+  setProfilePhoto(loggedInPhoto);
+
+
   document.getElementById('qr-frame').src = `/qrcodescanner/?t=${Date.now()}`;
 }
 
@@ -675,11 +1037,16 @@ async function loadCurrentUser() {
     if (!data.success || !data.employee) return;
 
     const emp = data.employee;
-    document.getElementById('sidebar-employee-name').textContent = emp.name || 'Employee';
-    document.getElementById('account-employee-name').textContent = emp.name || 'Employee';
-    document.getElementById('account-employee-id').textContent = emp.employee_id || '—';
-    currentEmployeeId = emp.employee_id || currentEmployeeId;
-    setProfilePhoto(emp.photo_url);
+
+    loggedInEmployeeId = emp.employee_id || null;
+    loggedInName = emp.name || 'Employee';
+    loggedInPhoto = emp.photo_url || null;
+
+    document.getElementById('sidebar-employee-name').textContent = loggedInName;
+    document.getElementById('account-employee-name').textContent = loggedInName;
+    document.getElementById('account-employee-id').textContent = loggedInEmployeeId || '—';
+    currentEmployeeId = loggedInEmployeeId;
+    setProfilePhoto(loggedInPhoto);
   } catch (err) {
     console.error('Could not load current user:', err);
   }
@@ -780,8 +1147,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('#profile-dropdown [data-action="logout"]').addEventListener('click', async () => {
     profileDropdown.classList.add('hidden');
     try {
-      // PALITAN NA GAMIT ANG secureFetch, at i-reset ang cached CSRF token
-      // pagkatapos mag-logout (nawawalan ito ng bisa kasabay ng session).
       await secureFetch('/api/logout', { method: 'POST' });
     } catch (err) {
       console.error('Logout request failed:', err);

@@ -4,7 +4,7 @@ import base64
 from database.postgress import get_connection
 from config.appwrite_config import storage, bucket_id
 from api import fetch_recent_scans
-
+from api_analytics.analytics_export import AnalyticsExportController
 LOCATION_MATCH_WINDOW_MINUTES = 15
 
 _notifications = [
@@ -21,7 +21,7 @@ def _quick_add_qr_id(name):
 
 
 def _is_fully_verified(scan):
-  
+
     from deepfacerecog_controller import MIN_ACCESS_SCORE_PERCENT
 
     if (scan.get("score") or 0) < MIN_ACCESS_SCORE_PERCENT:
@@ -64,7 +64,7 @@ def _is_fully_verified(scan):
 
 
 def _get_employee_photo_data_url(photo_file_id):
-  
+
     if not photo_file_id:
         return ""
     try:
@@ -76,16 +76,16 @@ def _get_employee_photo_data_url(photo_file_id):
         return ""
 
 
-PH_TZ = timezone(timedelta(hours=8)) 
+PH_TZ = timezone(timedelta(hours=8))
 
 
 def _format_date_hired(date_hired):
-   
+
     if not date_hired:
         return ""
 
     if date_hired.tzinfo is None:
-       
+
         date_hired = date_hired.replace(tzinfo=timezone.utc)
 
     local_dt = date_hired.astimezone(PH_TZ)
@@ -97,6 +97,11 @@ def _format_date_hired(date_hired):
 
 
 def _row_to_dict(cur, row):
+    """Ginagawang dict ang isang DB row batay sa PANGALAN ng column (hindi
+    sa posisyon). Ito ang dapat laging gamitin sa halip na direktang
+    tuple-unpacking (hal. `for a, b, c in cur.fetchall()`), dahil ang
+    positional unpacking ay masisira kapag nagbago ang pagkakasunod-sunod
+    ng column sa query o sa table — kahit walang logic na binago."""
     columns = [desc[0] for desc in cur.description]
     return dict(zip(columns, row))
 
@@ -124,7 +129,6 @@ def _set_leave_status(leave_id, status):
 
 
 class ApiController:
-   
 
     #  Employees 
 
@@ -138,20 +142,37 @@ class ApiController:
             cur = conn.cursor()
 
             cur.execute(
-               
+               """
+                SELECT name, employee_id, contact, address, date_hired, photo_file_id, created_at
+                FROM employees
+                WHERE deleted_at IS NULL
+                ORDER BY name ASC
+                """
             )
-            for name, employee_id, contact, address, date_hired, photo_file_id, created_at in cur.fetchall():
+            # FIX: dati ay direktang positional tuple-unpack
+            # (`for name, employee_id, ... in cur.fetchall():`) — kaya kapag
+            # nagbago ang order ng columns sa SELECT o sa table mismo, mali
+            # na ang mapunta sa bawat variable nang walang nakikitang error.
+            # Ngayon, dict-based na ito gamit ang _row_to_dict(), kaya base
+            # sa PANGALAN ng column kinukuha ang value — hindi maaapektuhan
+            # ng pagbabago sa order.
+            for row in cur.fetchall():
+                emp = _row_to_dict(cur, row)
+                name = emp.get("name")
+                employee_id = emp.get("employee_id")
                 if not name or not employee_id:
                     continue
+                created_at = emp.get("created_at")
+                date_hired = emp.get("date_hired")
                 roster.append({
                     "name": name,
                     "employeeId": employee_id,
-                    "contact": contact or "",
-                    "address": address or "",                 
+                    "contact": emp.get("contact") or "",
+                    "address": emp.get("address") or "",
                     "dateHired": _format_date_hired(created_at) if created_at else (
                         date_hired.isoformat() if date_hired else ""
                     ),
-                    "photo": _get_employee_photo_data_url(photo_file_id),
+                    "photo": _get_employee_photo_data_url(emp.get("photo_file_id")),
                     "source": "registered",
                 })
                 seen_names.add(name)
@@ -159,7 +180,10 @@ class ApiController:
             cur.execute(
                 "SELECT name, employee_id FROM quick_add_employees WHERE deleted_at IS NULL"
             )
-            for name, employee_id in cur.fetchall():
+            for row in cur.fetchall():
+                qa = _row_to_dict(cur, row)
+                name = qa.get("name")
+                employee_id = qa.get("employee_id")
                 if not name or name in seen_names:
                     continue
                 roster.append({
@@ -242,7 +266,8 @@ class ApiController:
 
     @classmethod
     def soft_delete_employee(cls, employee_id, deleted_by=None):
-        
+        """Soft-delete: manatili ang row sa employees (para sa FK integrity),
+        pero i-mark ang deleted_at at i-log din sa deleted_employees bilang archive."""
         conn = get_connection()
         try:
             cur = conn.cursor()
@@ -252,14 +277,49 @@ class ApiController:
                 UPDATE employees
                 SET deleted_at = %s, deleted_by = %s
                 WHERE employee_id = %s AND deleted_at IS NULL
-                RETURNING employee_id
+                RETURNING employee_id, name, contact, address, date_hired, qr_path, qr_code_value,
+                          photo_file_id, photo, photo_data, face_registered, created_at
                 """,
                 (datetime.utcnow(), deleted_by, employee_id)
             )
-            updated = cur.fetchone()
+            row = cur.fetchone()
 
-            if not updated:
-               
+            if row:
+                # FIX: dati ay malaking positional tuple-unpack:
+                #   (emp_id, name, contact, address, date_hired, qr_path,
+                #    qr_code_value, photo_file_id, photo, photo_data,
+                #    face_registered, created_at) = row
+                # Napaka-delikado nito — kahit isang column lang ang
+                # ma-reorder o madagdag sa RETURNING/table, mali na agad
+                # lahat ng susunod na value. Ngayon, dict-based na
+                # (_row_to_dict) at ang INSERT sa ibaba ay gumagamit na ng
+                # NAMED parameters (%(column)s) sa halip na positional
+                # (%s, %s, %s...), kaya base sa pangalan ng column
+                # ipinapasok ang bawat value, hindi sa pagkakasunod-sunod.
+                emp = _row_to_dict(cur, row)
+
+                cur.execute(
+                    """
+                    INSERT INTO deleted_employees
+                        (employee_id, name, contact, address, date_hired, qr_path, qr_code_value,
+                         photo_file_id, photo, photo_data, face_registered, created_at,
+                         deleted_at, deleted_by)
+                    VALUES (%(employee_id)s, %(name)s, %(contact)s, %(address)s, %(date_hired)s,
+                            %(qr_path)s, %(qr_code_value)s, %(photo_file_id)s, %(photo)s,
+                            %(photo_data)s, %(face_registered)s, %(created_at)s,
+                            %(deleted_at)s, %(deleted_by)s)
+                    ON CONFLICT (employee_id) DO UPDATE SET
+                        deleted_at = EXCLUDED.deleted_at,
+                        deleted_by = EXCLUDED.deleted_by
+                    """,
+                    {
+                        **emp,
+                        "deleted_at": datetime.utcnow(),
+                        "deleted_by": deleted_by,
+                    }
+                )
+                conn.commit()
+            else:
                 cur.execute(
                     """
                     UPDATE quick_add_employees
@@ -269,12 +329,11 @@ class ApiController:
                     """,
                     (datetime.utcnow(), deleted_by, employee_id)
                 )
-                updated = cur.fetchone()
+                row = cur.fetchone()
+                conn.commit()
 
-            conn.commit()
-
-            if not updated:
-                return {"error": "Employee not found."}, 404
+                if not row:
+                    return {"error": "Employee not found."}, 404
         finally:
             conn.close()
 
@@ -282,7 +341,8 @@ class ApiController:
 
     @classmethod
     def restore_employee(cls, employee_id):
-        """Ibalik ang isang na-soft-delete na employee (deleted_at = NULL)."""
+        """I-clear ang deleted_at sa employees (row nandoon pa rin talaga),
+        at alisin sa deleted_employees log."""
         conn = get_connection()
         try:
             cur = conn.cursor()
@@ -296,9 +356,12 @@ class ApiController:
                 """,
                 (employee_id,)
             )
-            updated = cur.fetchone()
+            row = cur.fetchone()
 
-            if not updated:
+            if row:
+                cur.execute("DELETE FROM deleted_employees WHERE employee_id = %s", (employee_id,))
+                conn.commit()
+            else:
                 cur.execute(
                     """
                     UPDATE quick_add_employees
@@ -308,12 +371,11 @@ class ApiController:
                     """,
                     (employee_id,)
                 )
-                updated = cur.fetchone()
+                row = cur.fetchone()
+                conn.commit()
 
-            conn.commit()
-
-            if not updated:
-                return {"error": "Deleted employee not found."}, 404
+                if not row:
+                    return {"error": "Deleted employee not found."}, 404
         finally:
             conn.close()
 
@@ -321,33 +383,47 @@ class ApiController:
 
     @staticmethod
     def get_deleted_employees():
-     
         deleted = []
         conn = get_connection()
         try:
             cur = conn.cursor()
 
             cur.execute(
-               
+                """
+                SELECT name, employee_id, deleted_at, deleted_by
+                FROM deleted_employees
+                ORDER BY deleted_at DESC
+                """
             )
-            for name, employee_id, deleted_at, deleted_by in cur.fetchall():
+            # FIX: dati ay `for name, employee_id, deleted_at, deleted_by in
+            # cur.fetchall():` — pareho ring positional. Ginawang dict-based.
+            for row in cur.fetchall():
+                d = _row_to_dict(cur, row)
+                deleted_at = d.get("deleted_at")
                 deleted.append({
-                    "name": name,
-                    "employee_id": employee_id,
+                    "name": d.get("name"),
+                    "employee_id": d.get("employee_id"),
                     "deleted_at": deleted_at.isoformat() if deleted_at else None,
-                    "deleted_by": deleted_by or "",
+                    "deleted_by": d.get("deleted_by") or "",
                     "source": "registered",
                 })
 
             cur.execute(
-              
+                """
+                SELECT name, employee_id, deleted_at, deleted_by
+                FROM quick_add_employees
+                WHERE deleted_at IS NOT NULL
+                ORDER BY deleted_at DESC
+                """
             )
-            for name, employee_id, deleted_at, deleted_by in cur.fetchall():
+            for row in cur.fetchall():
+                d = _row_to_dict(cur, row)
+                deleted_at = d.get("deleted_at")
                 deleted.append({
-                    "name": name,
-                    "employee_id": employee_id,
+                    "name": d.get("name"),
+                    "employee_id": d.get("employee_id"),
                     "deleted_at": deleted_at.isoformat() if deleted_at else None,
-                    "deleted_by": deleted_by or "",
+                    "deleted_by": d.get("deleted_by") or "",
                     "source": "quick_add",
                 })
         finally:
@@ -364,8 +440,15 @@ class ApiController:
         try:
             cur = conn.cursor()
             cur.execute(
-              
+                """
+                SELECT id, shift_name, date, time, time_in, time_out, location, type,
+                       employees, employee_qr_id, replacing_employee, replacing_employee_qr_id,
+                       lat, lng, created_at
+                FROM schedules
+                ORDER BY id ASC
+                """
             )
+
             docs = [_row_to_dict(cur, row) for row in cur.fetchall()]
         finally:
             conn.close()
@@ -412,7 +495,13 @@ class ApiController:
             conn.commit()
 
             cur.execute(
-               
+                """
+                SELECT id, shift_name, date, time, time_in, time_out, location, type,
+                       employees, employee_qr_id, replacing_employee, replacing_employee_qr_id,
+                       lat, lng, created_at
+                FROM schedules
+                ORDER BY id ASC
+                """
             )
             docs = [_row_to_dict(cur, row) for row in cur.fetchall()]
         finally:
@@ -428,7 +517,7 @@ class ApiController:
         conn = get_connection()
         try:
             cur = conn.cursor()
-            
+
             cur.execute(
                 """
                 UPDATE schedules
@@ -449,8 +538,13 @@ class ApiController:
             conn.commit()
 
             cur.execute(
-            
-               
+                """
+                SELECT id, shift_name, date, time, time_in, time_out, location, type,
+                       employees, employee_qr_id, replacing_employee, replacing_employee_qr_id,
+                       lat, lng, created_at
+                FROM schedules
+                ORDER BY id ASC
+                """
             )
             docs = [_row_to_dict(cur, r) for r in cur.fetchall()]
         finally:
@@ -533,7 +627,9 @@ class ApiController:
         try:
             cur = conn.cursor()
             cur.execute(
-               
+            """
+            SELECT *, created_at AS timestamp FROM location_checkins
+            """
             )
             checkins = [_row_to_dict(cur, row) for row in cur.fetchall()]
 
@@ -582,61 +678,6 @@ class ApiController:
             "onDuty": len(checked_in_ids),
         }
 
-    #  Analytics 
-
-    @staticmethod
-    def get_analytics():
-        conn = get_connection()
-        try:
-            cur = conn.cursor()
-
-            cur.execute("SELECT COUNT(*) FROM employees")
-            total_employees = max(1, cur.fetchone()[0])
-
-            now = datetime.now()
-            week_ago = now - timedelta(days=7)
-
-            cur.execute(
-                """
-                SELECT id, employee_id, score, verified_at FROM scan_logs
-                WHERE verified_at >= %s
-                """,
-                (week_ago,)
-            )
-            recent_scans = [_row_to_dict(cur, row) for row in cur.fetchall()]
-
-            total_scans = len(recent_scans)
-            fully_verified_scans = sum(1 for s in recent_scans if _is_fully_verified(s))
-
-            attendance_rate = round((fully_verified_scans / total_scans) * 100, 1) if total_scans else 0
-            on_time_rate = attendance_rate
-            cur.execute("SELECT COUNT(*) FROM leaves WHERE status = %s", ("Approved",))
-            approved_leaves = cur.fetchone()[0]
-            leave_utilization = round((approved_leaves / total_employees) * 100, 1)
-            avg_hours = 8
-
-            day_counts = {}
-            for i in range(6, -1, -1):
-                day = (now - timedelta(days=i)).strftime("%a")
-                day_counts[day] = 0
-            for s in recent_scans:
-                verified_at = s.get("verified_at")
-                if verified_at and _is_fully_verified(s):
-                    d = verified_at.strftime("%a")
-                    day_counts[d] = day_counts.get(d, 0) + 1
-
-            weekly_trend = [{"day": d, "checkins": c} for d, c in day_counts.items()]
-        finally:
-            conn.close()
-
-        return {
-            "attendanceRate": {"value": attendance_rate, "formula": "fully verified (QR+Face+Location) scans ÷ total scans (last 7 days)"},
-            "onTimeRate": {"value": on_time_rate, "formula": "placeholder — needs shift start time comparison"},
-            "leaveUtilization": {"value": leave_utilization, "formula": "approved leaves ÷ total employees"},
-            "avgHours": {"value": avg_hours, "formula": "placeholder — needs time_in/time_out pairing"},
-            "weeklyTrend": weekly_trend,
-        }
-
     @staticmethod
     def latest_attendance():
         scans = fetch_recent_scans(50)
@@ -655,4 +696,96 @@ class ApiController:
                 "photo": scan.get("photo", "")
             })
 
-        return data
+        return {"attendance": data}
+
+    #  Analytics 
+
+    @staticmethod
+    def get_analytics():
+        """
+        Kinukwenta ang mga workforce analytics metrics (Attendance Rate,
+        On-Time Rate, Leave Utilization, Avg. Hours Logged) at ang
+        weekly scan trend - lahat batay sa FULLY VERIFIED na scan_logs
+        (parehong batayan ng Monitoring/_has_location_checkin at ng
+        Analytics export/_fetch_scan_logs), kaya magkakatugma ang mga
+        numero sa buong dashboard.
+        """
+        today = datetime.utcnow().date()
+        range_start = today - timedelta(days=29)  # 30-day window para sa rates
+        trend_start = today - timedelta(days=6)    # 7-day window para sa graph
+
+        attendance_df = AnalyticsExportController.build_attendance_record_df(range_start, today)
+        time_df = AnalyticsExportController.build_time_in_out_df(range_start, today)
+        leave_df = AnalyticsExportController.build_leave_df()
+
+        day_columns = [c for c in attendance_df.columns if c not in ("employee_id", "name")]
+        total_cells = len(attendance_df) * len(day_columns) if day_columns else 0
+
+        present_count = 0
+        late_count = 0
+        if total_cells:
+            for col in day_columns:
+                counts = attendance_df[col].value_counts()
+                present_count += int(counts.get("Present", 0))
+                late_count += int(counts.get("Late", 0))
+
+        worked_count = present_count + late_count
+        attendance_rate = round((worked_count / total_cells) * 100, 1) if total_cells else 0.0
+        on_time_rate = round((present_count / worked_count) * 100, 1) if worked_count else 0.0
+
+        total_employees = len(AnalyticsExportController._fetch_employees())
+        leave_utilization = round((len(leave_df) / total_employees) * 100, 1) if total_employees else 0.0
+
+        avg_hours = 0.0
+        if not time_df.empty:
+            complete = time_df.dropna(subset=["time_in", "time_out"])
+            if not complete.empty:
+                hours = (complete["time_out"] - complete["time_in"]).dt.total_seconds() / 3600
+                avg_hours = round(hours.mean(), 1)
+
+        conn = get_connection()
+        weekly_trend = []
+        try:
+            cur = conn.cursor()
+            for i in range(7):
+                day = trend_start + timedelta(days=i)
+                cur.execute(
+                    """
+                    SELECT COUNT(*) FROM scan_logs sl
+                    WHERE sl.verified_at::date = %s
+                      AND EXISTS (
+                          SELECT 1 FROM location_checkins lc
+                          WHERE lc.scan_id::text = sl.id::text
+                             OR (
+                                 lc.employee_id = sl.employee_id
+                                 AND lc.created_at BETWEEN sl.verified_at
+                                     AND sl.verified_at + INTERVAL '15 minutes'
+                             )
+                      )
+                    """,
+                    (day,)
+                )
+                count = cur.fetchone()[0]
+                weekly_trend.append({"day": day.strftime("%a"), "checkins": count})
+        finally:
+            conn.close()
+
+        return {
+            "attendanceRate": {
+                "value": attendance_rate,
+                "formula": f"(Present + Late days) / (Employees x Workdays) x 100, last 30 days = ({worked_count} / {total_cells}) x 100"
+            },
+            "onTimeRate": {
+                "value": on_time_rate,
+                "formula": f"Present days / (Present + Late days) x 100, last 30 days = ({present_count} / {worked_count}) x 100"
+            },
+            "leaveUtilization": {
+                "value": leave_utilization,
+                "formula": f"Approved leave requests / Total employees x 100 = ({len(leave_df)} / {total_employees}) x 100"
+            },
+            "avgHours": {
+                "value": avg_hours,
+                "formula": "Average of (Time Out minus Time In) across completed time-in/time-out pairs, last 30 days"
+            },
+            "weeklyTrend": weekly_trend,
+        }

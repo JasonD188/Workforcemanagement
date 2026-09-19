@@ -44,3 +44,18 @@ def get_employee(employee_id):
         "success": True,
         **employee
     })
+
+
+@registerface_bp.route("/debug/<employee_id>")
+def debug_employee(employee_id):
+    """
+    Diagnostic endpoint lamang - hindi ginagamit ng UI. Sinusuri kung saan
+    talaga humihinto/nabibigo ang face-matching chain para sa isang
+    partikular na employee_id (walang Appwrite upload, nawalang file sa
+    storage, walang usable na mukha, o hindi pa na-reload sa memory), sa
+    halip na hulaan lang batay sa symptoms sa scan screen.
+
+    Halimbawa: GET /registerface/debug/f9a53db4
+    """
+    result = RegisterFaceController.diagnose_employee_face(employee_id)
+    return jsonify(result)
