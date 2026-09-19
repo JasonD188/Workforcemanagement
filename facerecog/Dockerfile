@@ -59,8 +59,9 @@ RUN useradd --create-home --uid 1000 appuser && \
     chown -R appuser:appuser /app
 USER appuser
 
-EXPOSE 5000
+EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/')" || exit 1
-  gunicorn --chdir facerecog app:app --bind 0.0.0.0:8080 --workers 1 --threads 4 --timeout 300
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')" || exit 1
+
+CMD ["gunicorn", "allfiles:app", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "4", "--timeout", "300"]
