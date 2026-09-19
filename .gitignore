@@ -1,9 +1,7 @@
-
-env/
+﻿env/
 .env
 .env.*
 !.env.example
-
 
 __pycache__/
 *.pyc
@@ -17,30 +15,25 @@ venv/
 register/
 qrcodes/
 
-
 employees.json
 
 *.sql
 *.dump
 *.backup
 
-
 instance/
 .flaskenv
-
 
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
-
 *.log
-
 
 *.pem
 *.key
 *.crt
-*.dump
+
 railway connect Postgres
 railway connect Postgres.pub
