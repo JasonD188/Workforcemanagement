@@ -1,3 +1,4 @@
+
 FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -21,6 +22,7 @@ RUN pip install --upgrade pip && \
     pip wheel --wheel-dir /wheels -r requirements.txt
 
 
+
 FROM python:3.11-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -28,6 +30,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
+
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenblas0 \
@@ -48,12 +51,16 @@ RUN pip install --upgrade pip && \
 
 COPY . .
 
+
 RUN mkdir -p /app/qrcodes
+
 
 RUN useradd --create-home --uid 1000 appuser && \
     chown -R appuser:appuser /app
 USER appuser
 
-EXPOSE 8080
+EXPOSE 5000
 
-CMD ["gunicorn", "allfiles:app", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "4", "--timeout", "300", "--access-logfile", "-", "--error-logfile", "-"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/')" || exit 1
+gunicorn app:app --bind 0.0.0.0:8080 --workers 1 --threads 4 --timeout 300
