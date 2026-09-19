@@ -14,5 +14,4 @@ psycopg2-binary
 appwrite
 bcrypt
 pandas
-flask-cors
-opencv-python-headless
+openpyxl
