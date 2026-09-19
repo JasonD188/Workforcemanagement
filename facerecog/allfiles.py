@@ -85,6 +85,10 @@ def add_no_cache_headers(response):
     response.headers['Pragma'] = 'no-cache'
     return response
 
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
 
 @app.route("/")
 @page_role_required('admin')
