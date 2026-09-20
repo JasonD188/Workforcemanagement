@@ -42,18 +42,38 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
 
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "").split(",")
 CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
-ALLOWED_ADMIN_IPS = os.environ.get("ALLOWED_ADMIN_IPS", "").split(",")
+
+# Nililinis ang mga space at walang laman na entry
+ALLOWED_ADMIN_IPS = [
+    ip.strip()
+    for ip in os.environ.get("ALLOWED_ADMIN_IPS", "").split(",")
+    if ip.strip()
+]
+
+
+def get_client_ip():
+    """
+    Kunin ang totoong IP ng bisita.
+    Sa likod ng Cloudflare (tunnel man o proxy), nasa CF-Connecting-IP ito.
+    """
+    ip = (
+        request.headers.get("CF-Connecting-IP")
+        or request.headers.get("X-Forwarded-For", "").split(",")[0]
+        or request.remote_addr
+        or ""
+    )
+    return ip.strip()
 
 
 @app.before_request
 def restrict_admin_login():
-    if request.path == "/loginadmin" and ALLOWED_ADMIN_IPS and ALLOWED_ADMIN_IPS != ['']:
-        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
-        detected_ip = client_ip.split(",")[0].strip()
+    if request.path == "/loginadmin" and ALLOWED_ADMIN_IPS:
+        detected_ip = get_client_ip()
 
         # ---- DEBUG (tanggalin na pagkatapos ma-verify) ----
-        print(f"[DEBUG] Raw X-Forwarded-For header: '{request.headers.get('X-Forwarded-For')}'")
-        print(f"[DEBUG] Raw remote_addr: '{request.remote_addr}'")
+        print(f"[DEBUG] CF-Connecting-IP: '{request.headers.get('CF-Connecting-IP')}'")
+        print(f"[DEBUG] X-Forwarded-For: '{request.headers.get('X-Forwarded-For')}'")
+        print(f"[DEBUG] remote_addr: '{request.remote_addr}'")
         print(f"[DEBUG] Detected IP (final): '{detected_ip}'")
         print(f"[DEBUG] Allowed IPs list: {ALLOWED_ADMIN_IPS}")
         print(f"[DEBUG] Match found: {detected_ip in ALLOWED_ADMIN_IPS}")
@@ -143,6 +163,7 @@ except Exception as e:
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    print(f"Starting on port {port}")
     app.run(
         host="0.0.0.0",
         port=port,
