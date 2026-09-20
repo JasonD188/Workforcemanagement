@@ -51,17 +51,10 @@
   .loc-pin-wrap { position: relative; overflow: hidden; background: #0b0f0d; aspect-ratio: 4/3; display:flex; align-items:center; justify-content:center; }
   #loc-map { width: 100%; height: 100%; background: #0b0f0d; }
   #loc-map .leaflet-control-attribution { font-size: 9px; }
-  /* Leaflet ships its own internal z-indexes (panes up to ~650, controls
-     800). Cap the whole map's stacking context to the wrap's own
-     stacking context so nothing inside it can ever paint above other
-     UI (e.g. the result overlay) even while the wrap itself is visible. */
   .loc-pin-wrap { isolation: isolate; }
 
-  /* --- Step container width: same responsive max-width for every step,
-     including Step 2 (Verify Face) - no more landscape widening. --- */
   #flow-container { max-width: 28rem; }
 
-  /* --- Responsive tweaks --- */
   .step-track-label-full { display: none; }
   .step-track-label-short { display: inline; }
   @media (min-width: 480px) {
@@ -74,13 +67,11 @@
     #step1-dot, #step2-dot, #step3-dot { width: 1.5rem; height: 1.5rem; font-size: 0.65rem; }
   }
 
-  /* --- Sub-tabs used inside Attendance Summary --- */
   .subtab-btn { transition: background-color .15s ease, color .15s ease; }
   .subtab-active { background-color:#f4b942; color:#14171a; }
   .subtab-inactive { color:#64748b; }
   .subtab-inactive:hover { background-color: rgba(148,163,184,.15); }
 
-  /* --- Badge for unread notifications --- */
   #notif-badge { min-width: 1.1rem; height: 1.1rem; }
 </style>
 </head>
@@ -132,8 +123,6 @@
           <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14c-4.4 0-8 2-8 5v1h16v-1c0-3-3.6-5-8-5z"/></svg>
           <span class="sidebar-label whitespace-nowrap">My Account</span>
         </button>
-
-
       </nav>
 
       <div class="mt-4 px-2">
@@ -188,6 +177,7 @@
 
     <main class="p-3 sm:p-5 lg:p-8 space-y-4 sm:space-y-6 min-w-0">
 
+      <!-- ============ Attendance (QR → Face → Location) ============ -->
       <section id="panel-attendance" class="panel">
 
         <div id="flow-container" class="mx-auto w-full transition-all duration-300">
@@ -209,18 +199,15 @@
           </div>
 
           <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          
+
             <div id="step-qr-wrap">
-              <iframe id="qr-frame" src="/qrcodescanner/" title="Scan QR Badge"
-                class="w-full border-0"></iframe>
+              <iframe id="qr-frame" src="/qrcodescanner/" title="Scan QR Badge" class="w-full border-0"></iframe>
             </div>
 
             <div id="step-face-wrap" class="hidden">
-              <iframe id="face-frame" src="about:blank" title="Face Verification"
-                class="w-full border-0"></iframe>
+              <iframe id="face-frame" src="about:blank" title="Face Verification" class="w-full border-0"></iframe>
             </div>
 
-        
             <div id="step-location-wrap" class="hidden p-4 sm:p-5 space-y-4">
 
               <div id="scan-frame" class="loc-pin-wrap rounded-2xl">
@@ -257,18 +244,16 @@
 
       </section>
 
-    
+      <!-- ============ Attendance Summary ============ -->
       <section id="panel-summary" class="panel hidden">
         <div class="max-w-3xl mx-auto space-y-4">
 
-          
           <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-1.5 flex gap-1 overflow-x-auto">
             <button data-subtab="today" class="subtab-btn subtab-active flex-1 whitespace-nowrap text-sm font-semibold px-3 py-2 rounded-xl">Today's Attendance</button>
             <button data-subtab="history" class="subtab-btn subtab-inactive flex-1 whitespace-nowrap text-sm font-semibold px-3 py-2 rounded-xl">Attendance History</button>
             <button data-subtab="overtime" class="subtab-btn subtab-inactive flex-1 whitespace-nowrap text-sm font-semibold px-3 py-2 rounded-xl">Overtime</button>
           </div>
 
-         
           <div id="subtab-today" class="subtab-panel space-y-3">
             <div class="grid grid-cols-2 gap-3">
               <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-4">
@@ -286,14 +271,12 @@
             </div>
           </div>
 
-          <!-- Attendance History -->
           <div id="subtab-history" class="subtab-panel hidden space-y-3">
             <div id="history-list" class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100 dark:divide-white/5">
               <p class="p-4 text-sm text-slate-400">Ikinakarga ang history…</p>
             </div>
           </div>
 
-          <!-- Overtime -->
           <div id="subtab-overtime" class="subtab-panel hidden space-y-3">
             <div id="overtime-list" class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm divide-y divide-slate-100 dark:divide-white/5">
               <p class="p-4 text-sm text-slate-400">Walang overtime record na makikita.</p>
@@ -303,7 +286,7 @@
         </div>
       </section>
 
-     
+      <!-- ============ Leave Request ============ -->
       <section id="panel-leave" class="panel hidden">
         <div class="max-w-2xl mx-auto space-y-5">
 
@@ -347,6 +330,7 @@
         </div>
       </section>
 
+      <!-- ============ Notifications ============ -->
       <section id="panel-notifications" class="panel hidden">
         <div class="max-w-2xl mx-auto space-y-4">
           <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
@@ -358,7 +342,7 @@
         </div>
       </section>
 
-     
+      <!-- ============ Report / Concern ============ -->
       <section id="panel-report" class="panel hidden">
         <div class="max-w-2xl mx-auto space-y-5">
           <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm p-5 sm:p-6">
@@ -370,7 +354,7 @@
                   <option>Attendance Issue</option>
                   <option>Schedule Concern</option>
                   <option>Technical Problem</option>
-                  <option>Security Conern</option>
+                  <option>Security Concern</option>
                   <option>Other</option>
                 </select>
               </div>
@@ -391,6 +375,7 @@
         </div>
       </section>
 
+      <!-- ============ My Account ============ -->
       <section id="panel-account" class="panel hidden">
         <div class="max-w-2xl mx-auto space-y-5">
 
@@ -467,15 +452,37 @@ function applyTheme(theme) {
   } else {
     root.classList.remove('dark'); sunIcon.classList.add('hidden'); moonIcon.classList.remove('hidden');
   }
-  localStorage.setItem('ar-theme', theme);
+  try { localStorage.setItem('ar-theme', theme); } catch (e) {}
 }
 function initTheme() {
-  const saved = localStorage.getItem('ar-theme');
+  let saved = null;
+  try { saved = localStorage.getItem('ar-theme'); } catch (e) {}
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   applyTheme(saved || (prefersDark ? 'dark' : 'light'));
 }
 
-// --- Step tracker visuals -------------------------------------------------
+// --- Generic helpers --------------------------------------------------
+// I-escape ang LAHAT ng galing sa server bago ilagay sa innerHTML (iwas XSS).
+function esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+// Kung relative path ang photo (hal. "uploads/abc.jpg"), lagyan ng "/".
+function normalizePhotoUrl(p) {
+  if (!p) return null;
+  if (/^(https?:|data:|blob:|\/)/i.test(p)) return p;
+  return '/' + p;
+}
+
+function fmtDateTime(value) {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value || '';
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+// --- Step tracker visuals ---------------------------------------------
 const dots = { 1: document.getElementById('step1-dot'), 2: document.getElementById('step2-dot'), 3: document.getElementById('step3-dot') };
 const labels = { 1: document.getElementById('step1-label'), 2: document.getElementById('step2-label'), 3: document.getElementById('step3-label') };
 const connectors = { 1: document.getElementById('step-connector-1'), 2: document.getElementById('step-connector-2') };
@@ -517,13 +524,14 @@ const avatarPairs = [
   ['account-avatar-img', 'account-avatar-fallback'],
 ];
 function setProfilePhoto(photo) {
+  const url = normalizePhotoUrl(photo);
   avatarPairs.forEach(([imgId, fallbackId]) => {
     const img = document.getElementById(imgId);
     const fallback = document.getElementById(fallbackId);
     if (!img || !fallback) return;
-    if (photo) {
+    if (url) {
       img.onerror = () => { img.classList.add('hidden'); fallback.classList.remove('hidden'); };
-      img.src = photo;
+      img.src = url;
       img.classList.remove('hidden');
       fallback.classList.add('hidden');
     } else {
@@ -534,7 +542,18 @@ function setProfilePhoto(photo) {
   });
 }
 
+// Isang lugar lang para i-update ang pangalan/ID/photo sa buong UI.
+function renderIdentity(id, name, photo) {
+  const displayName = name || 'Employee';
+  document.getElementById('sidebar-employee-name').textContent = displayName;
+  document.getElementById('account-employee-name').textContent = displayName;
+  document.getElementById('account-employee-id').textContent = id || '—';
+  setProfilePhoto(photo);
+}
 
+const myEmployeeId = () => currentEmployeeId || loggedInEmployeeId;
+
+// --- Navigation -------------------------------------------------------
 const NAV_ACTIVE = 'nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gold-400 text-ink-900 font-semibold text-sm';
 const NAV_INACTIVE = 'nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/80 hover:bg-white/10 font-semibold text-sm transition relative';
 function showPanel(panelName) {
@@ -572,30 +591,33 @@ document.querySelectorAll('[data-subtab]').forEach((btn) => {
   });
 });
 
+// --- Attendance summary -----------------------------------------------
 async function loadAttendanceSummary() {
-  if (!currentEmployeeId) return;
+  const employeeId = myEmployeeId();
+  if (!employeeId) return;
   try {
     // TODO: point this to your actual attendance-summary endpoint
-    const res = await fetch(`/api/attendance/today?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.timeIn) document.getElementById('today-time-in').textContent = data.timeIn;
-    if (data.timeOut) document.getElementById('today-time-out').textContent = data.timeOut;
-    if (data.status) document.getElementById('today-status').textContent = data.status;
+    const res = await fetch(`/api/attendance/today?employee_id=${encodeURIComponent(employeeId)}`, { credentials: 'same-origin' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.timeIn) document.getElementById('today-time-in').textContent = data.timeIn;
+      if (data.timeOut) document.getElementById('today-time-out').textContent = data.timeOut;
+      if (data.status) document.getElementById('today-status').textContent = data.status;
+    }
   } catch (err) {
     console.error('Could not load attendance summary:', err);
   }
 
   try {
-    const res = await fetch(`/api/attendance/history?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
+    const res = await fetch(`/api/attendance/history?employee_id=${encodeURIComponent(employeeId)}`, { credentials: 'same-origin' });
     if (res.ok) {
       const data = await res.json();
       const rows = data.history || [];
       const list = document.getElementById('history-list');
       list.innerHTML = rows.length ? rows.map(r => `
         <div class="p-3.5 flex items-center justify-between text-sm">
-          <span class="text-slate-500 dark:text-slate-400">${r.date || '—'}</span>
-          <span class="text-slate-700 dark:text-slate-200 font-medium">${r.timeIn || '—'} – ${r.timeOut || '—'}</span>
+          <span class="text-slate-500 dark:text-slate-400">${esc(r.date || '—')}</span>
+          <span class="text-slate-700 dark:text-slate-200 font-medium">${esc(r.timeIn || '—')} – ${esc(r.timeOut || '—')}</span>
         </div>`).join('') : '<p class="p-4 text-sm text-slate-400">Walang history na makikita.</p>';
     }
   } catch (err) {
@@ -603,15 +625,15 @@ async function loadAttendanceSummary() {
   }
 
   try {
-    const res = await fetch(`/api/attendance/overtime?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
+    const res = await fetch(`/api/attendance/overtime?employee_id=${encodeURIComponent(employeeId)}`, { credentials: 'same-origin' });
     if (res.ok) {
       const data = await res.json();
       const rows = data.overtime || [];
       const list = document.getElementById('overtime-list');
       list.innerHTML = rows.length ? rows.map(r => `
         <div class="p-3.5 flex items-center justify-between text-sm">
-          <span class="text-slate-500 dark:text-slate-400">${r.date || '—'}</span>
-          <span class="text-slate-700 dark:text-slate-200 font-medium">${r.hours || '0'} hrs</span>
+          <span class="text-slate-500 dark:text-slate-400">${esc(r.date || '—')}</span>
+          <span class="text-slate-700 dark:text-slate-200 font-medium">${esc(r.hours || '0')} hrs</span>
         </div>`).join('') : '<p class="p-4 text-sm text-slate-400">Walang overtime record na makikita.</p>';
     }
   } catch (err) {
@@ -619,17 +641,7 @@ async function loadAttendanceSummary() {
   }
 }
 
-// --- Leave form helpers (previously missing — this is why Submit did nothing) ---
-function myEmployeeId() {
-  return currentEmployeeId || loggedInEmployeeId;
-}
-
-function esc(str) {
-  const div = document.createElement('div');
-  div.textContent = str ?? '';
-  return div.innerHTML;
-}
-
+// --- Leave ------------------------------------------------------------
 function fmtLeaveDate(dateStr) {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
@@ -639,7 +651,7 @@ function fmtLeaveDate(dateStr) {
 function leaveStatusClasses(status) {
   const s = (status || '').toLowerCase();
   if (s === 'approved') return 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10';
-  if (s === 'rejected' || s === 'denied') return 'text-red-600 bg-red-50 dark:bg-red-500/10';
+  if (s === 'rejected' || s === 'denied' || s === 'declined') return 'text-red-600 bg-red-50 dark:bg-red-500/10';
   return 'text-amber-600 bg-amber-50 dark:bg-amber-500/10';
 }
 
@@ -733,35 +745,67 @@ async function loadLeaveRequests() {
   }
 }
 
+// --- Notifications (user-facing endpoint) -----------------------------
+function setNotifBadge(unread) {
+  const badge = document.getElementById('notif-badge');
+  if (unread > 0) { badge.textContent = unread > 99 ? '99+' : unread; badge.classList.remove('hidden'); }
+  else { badge.classList.add('hidden'); }
+}
+
+// Badge lang (tahimik) — para may bilang na agad pagka-login.
+async function refreshNotifBadge() {
+  try {
+    const res = await fetch('/api/user/notifications', { credentials: 'same-origin' });
+    if (!res.ok) return;
+    const data = await res.json();
+    setNotifBadge(data.unread ?? (data.notifications || []).filter(n => !n.is_read).length);
+  } catch (err) {
+    console.error('Could not refresh notification badge:', err);
+  }
+}
+
 async function loadNotifications() {
   const container = document.getElementById('notifications-list');
   try {
-    const res = await fetch('/api/notifications', { credentials: 'same-origin' });
+    const res = await fetch('/api/user/notifications', { credentials: 'same-origin' });
     if (!res.ok) return;
     const data = await res.json();
     const items = data.notifications || [];
-    const unread = items.filter(n => !n.read).length;
-    const badge = document.getElementById('notif-badge');
-    if (unread > 0) { badge.textContent = unread; badge.classList.remove('hidden'); }
-    else { badge.classList.add('hidden'); }
+    const unread = data.unread ?? items.filter(n => !n.is_read).length;
+    setNotifBadge(unread);
 
     container.innerHTML = items.length ? items.map(n => `
-      <div class="border border-slate-100 dark:border-white/10 rounded-xl p-3.5">
+      <div class="border ${n.is_read ? 'border-slate-100 dark:border-white/10' : 'border-gold-400/60 bg-gold-400/5'} rounded-xl p-3.5">
         <div class="flex items-center justify-between gap-2 mb-1">
-          <span class="text-sm font-semibold text-slate-800 dark:text-slate-100">${n.title || 'Announcement'}</span>
-          <span class="text-[11px] text-slate-400">${n.date || ''}</span>
+          <span class="text-sm font-semibold text-slate-800 dark:text-slate-100">${esc(n.title || 'Announcement')}</span>
+          <span class="text-[11px] text-slate-400">${esc(fmtDateTime(n.created_at))}</span>
         </div>
-        <p class="text-sm text-slate-500 dark:text-slate-400">${n.message || ''}</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400">${esc(n.body || '')}</p>
       </div>`).join('') : '<p class="text-sm text-slate-400">Wala pang bagong announcement.</p>';
+
+    // Markahan na read pagkatapos makita (at i-clear ang badge).
+    if (unread > 0) {
+      try {
+        const r = await secureFetch('/api/user/notifications/mark-all-read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employee_id: myEmployeeId() || '' }),
+        });
+        if (r.ok) setNotifBadge(0);
+      } catch (err) {
+        console.error('Could not mark notifications as read:', err);
+      }
+    }
   } catch (err) {
     console.error('Could not load notifications:', err);
   }
 }
 
+// --- Report / Concern -------------------------------------------------
 document.getElementById('report-concern-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const payload = {
-    employee_id: currentEmployeeId || '',
+    employee_id: myEmployeeId() || '',
     category: document.getElementById('report-category').value,
     details: document.getElementById('report-details').value,
   };
@@ -782,26 +826,28 @@ document.getElementById('report-concern-form').addEventListener('submit', async 
 });
 
 async function loadReports() {
-  if (!currentEmployeeId) return;
+  const employeeId = myEmployeeId();
+  if (!employeeId) return;
   const container = document.getElementById('report-history-list');
   try {
-    const res = await fetch(`/api/report-concern?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
+    const res = await fetch(`/api/report-concern?employee_id=${encodeURIComponent(employeeId)}`, { credentials: 'same-origin' });
     if (!res.ok) return;
     const data = await res.json();
     const rows = data.reports || [];
     container.innerHTML = rows.length ? rows.map(r => `
       <div class="border border-slate-100 dark:border-white/10 rounded-xl p-3.5">
         <div class="flex items-center justify-between gap-2 mb-1">
-          <span class="text-sm font-semibold text-slate-800 dark:text-slate-100">${r.category || '—'}</span>
-          <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full text-amber-600 bg-amber-50 dark:bg-amber-500/10">${r.status || 'Open'}</span>
+          <span class="text-sm font-semibold text-slate-800 dark:text-slate-100">${esc(r.category || '—')}</span>
+          <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full text-amber-600 bg-amber-50 dark:bg-amber-500/10">${esc(r.status || 'Open')}</span>
         </div>
-        <p class="text-xs text-slate-400">${r.details || ''}</p>
+        <p class="text-xs text-slate-400">${esc(r.details || '')}</p>
       </div>`).join('') : '<p>Wala ka pang naisumiteng report o concern.</p>';
   } catch (err) {
     console.error('Could not load reports:', err);
   }
 }
 
+// --- QR scan callback (tinatawag ng iframe) ---------------------------
 window.onQrScanSuccess = function (employeeId, name, photo) {
   if (loggedInEmployeeId && employeeId !== loggedInEmployeeId) {
     hideAllStepPanels();
@@ -816,20 +862,18 @@ window.onQrScanSuccess = function (employeeId, name, photo) {
   }
 
   currentEmployeeId = employeeId;
-  document.getElementById('sidebar-employee-name').textContent = name || 'Employee';
-  setProfilePhoto(photo);
-  document.getElementById('account-employee-id').textContent = employeeId || '—';
+  // Kung walang ipinasang name/photo ang scanner, gamitin ang galing sa login.
+  renderIdentity(employeeId, name || loggedInName, photo || loggedInPhoto);
 
   document.getElementById('step-qr-wrap').classList.add('hidden');
   document.getElementById('step-face-wrap').classList.remove('hidden');
   document.getElementById('step-face-wrap').classList.add('fade-in');
   setStep(2);
 
-
   document.getElementById('face-frame').src = `/deepfacerecog/?employee_id=${encodeURIComponent(employeeId)}`;
 };
 
-
+// --- Location check-in ------------------------------------------------
 const CHECKIN_URL = '/api/checkin';
 
 let locCoords = null;
@@ -845,8 +889,11 @@ const locErrorText = document.getElementById('loc-error-text');
 const locPinSvg = document.getElementById('loc-pin-svg');
 const locPinIconWrap = document.getElementById('loc-pin-icon');
 
-function renderLocationOnMap(lat, lng, accuracy) {
+const CAPTURE_BTN_HTML = `
+  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><circle cx="12" cy="11" r="3"/></svg>
+  Submit Location`;
 
+function renderLocationOnMap(lat, lng, accuracy) {
   if (!locMap) {
     locMap = L.map('loc-map', { zoomControl: false, attributionControl: true });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -876,9 +923,7 @@ function renderLocationOnMap(lat, lng, accuracy) {
     }
   }
 
-
   setTimeout(() => locMap.invalidateSize(), 50);
-
   locPinIconWrap.classList.add('hidden');
 }
 
@@ -894,7 +939,6 @@ function updateCaptureState() {
   btnCapture.disabled = !locCoords;
 }
 
-
 function startLocationGeo(isRetryLowAccuracy = false) {
   if (!('geolocation' in navigator)) {
     locText.textContent = 'Geolocation is not supported on this device.';
@@ -909,7 +953,6 @@ function startLocationGeo(isRetryLowAccuracy = false) {
 
   navigator.geolocation.getCurrentPosition(
     (pos) => {
-    
       locCoords = {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
@@ -920,7 +963,6 @@ function startLocationGeo(isRetryLowAccuracy = false) {
       locPinSvg.classList.remove('spin');
       locText.textContent = `Location found · accuracy ±${Math.round(locCoords.accuracy)}m`;
 
-  
       updateCaptureState();
 
       try {
@@ -931,7 +973,6 @@ function startLocationGeo(isRetryLowAccuracy = false) {
       }
     },
     (err) => {
-   
       if (err.code === err.TIMEOUT && !isRetryLowAccuracy) {
         startLocationGeo(true);
         return;
@@ -968,10 +1009,7 @@ function resetLocationStepUI() {
   locPinSvg.classList.add('spin');
   locText.textContent = 'Getting your location…';
   btnRetake.classList.add('hidden');
-  btnCapture.textContent = '';
-  btnCapture.innerHTML = `
-    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/><circle cx="12" cy="11" r="3"/></svg>
-    Check In`;
+  btnCapture.innerHTML = CAPTURE_BTN_HTML;
   updateCaptureState();
 }
 
@@ -995,7 +1033,7 @@ async function handleLocationCapture() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        employee_id: currentEmployeeId || '',
+        employee_id: myEmployeeId() || '',
         scan_id: currentScanId || '',
         lat: locCoords.lat,
         lng: locCoords.lng,
@@ -1007,7 +1045,6 @@ async function handleLocationCapture() {
 
     if (res.ok && !data.error) {
       document.getElementById('btn-retry-location').classList.add('hidden');
- 
       hideAllStepPanels();
       showResult('success', data.employeeName || 'Verified', data.message || 'Attendance recorded.');
     } else {
@@ -1018,6 +1055,8 @@ async function handleLocationCapture() {
     document.getElementById('btn-retry-location').classList.remove('hidden');
     showResult('error', 'Location Check-In Failed', err.message || 'Could not submit the location check-in.');
     btnRetake.classList.remove('hidden');
+    btnCapture.innerHTML = CAPTURE_BTN_HTML;
+    updateCaptureState();
   }
 }
 
@@ -1036,7 +1075,6 @@ function goToLocationStep() {
   resetLocationStepUI();
   startLocationGeo();
 }
-
 
 window.addEventListener('message', (event) => {
   const data = event.data || {};
@@ -1076,10 +1114,7 @@ function resetToQrStep() {
   currentEmployeeId = loggedInEmployeeId;
   currentScanId = null;
 
-  document.getElementById('sidebar-employee-name').textContent = loggedInName || 'Employee';
-  document.getElementById('account-employee-id').textContent = loggedInEmployeeId || '—';
-  setProfilePhoto(loggedInPhoto);
-
+  renderIdentity(loggedInEmployeeId, loggedInName, loggedInPhoto);
 
   document.getElementById('qr-frame').src = `/qrcodescanner/?t=${Date.now()}`;
 }
@@ -1097,6 +1132,10 @@ function retryLocationOnly() {
 document.getElementById('btn-scan-next').addEventListener('click', resetToQrStep);
 document.getElementById('btn-retry-location').addEventListener('click', retryLocationOnly);
 
+// --- Current user (FIXED) ---------------------------------------------
+// Dati: may "// ...existing na code" placeholder dito kaya walang nase-set
+// na data/photo pagka-login. Ngayon, kinukuha na ang employee mula sa
+// /api/me at inilalagay sa state at UI.
 async function loadCurrentUser() {
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' });
@@ -1110,18 +1149,27 @@ async function loadCurrentUser() {
       window.location.href = '/loginuser';
       return;
     }
-    // ...existing na code
+
+    const emp = data.employee;
+    // Tanggapin ang iba't ibang posibleng pangalan ng field mula sa /api/me.
+    // Kung iba ang tunay na field names mo, i-check sa DevTools > Network > /api/me.
+    loggedInEmployeeId = emp.employee_id || emp.employeeId || emp.qr_id || emp.qrId || emp.id || null;
+    loggedInName       = emp.name || emp.full_name || emp.fullName || 'Employee';
+    loggedInPhoto      = emp.photo || emp.photo_url || emp.photoUrl || emp.profile_photo || emp.profilePhoto || emp.image || null;
+
+    currentEmployeeId = loggedInEmployeeId;
+    renderIdentity(loggedInEmployeeId, loggedInName, loggedInPhoto);
   } catch (err) {
     console.error('Could not load current user:', err);
   }
 }
 
-
+// --- My schedule ------------------------------------------------------
 async function loadMySchedule() {
   const container = document.getElementById('account-schedule-list');
   if (!container) return;
 
-  if (!currentEmployeeId) {
+  if (!myEmployeeId()) {
     container.innerHTML = '<p>Mag-sign in muna sa iyong account para makita ang iyong schedule.</p>';
     return;
   }
@@ -1134,10 +1182,11 @@ async function loadMySchedule() {
     const data = await res.json();
     const schedules = data.schedules || [];
 
-    const myName = (document.getElementById('sidebar-employee-name').textContent || '').trim().toLowerCase();
+    const myName = (loggedInName || document.getElementById('sidebar-employee-name').textContent || '').trim().toLowerCase();
+    const myId = myEmployeeId();
 
     const mine = schedules.filter(s => {
-      if (s.employeeQrId && s.employeeQrId === currentEmployeeId) return true;
+      if (s.employeeQrId && s.employeeQrId === myId) return true;
       const empNames = (s.employees || []).map(e => (typeof e === 'string' ? e : (e.name || '')).trim().toLowerCase());
       return myName && empNames.includes(myName);
     });
@@ -1159,16 +1208,16 @@ async function loadMySchedule() {
       const timeIn = s.timeIn || legacyParts[0] || '';
       const timeOut = s.timeOut || legacyParts[1] || '';
       const replacing = isShift && s.replacingEmployee
-        ? `<p class="text-[11px] text-slate-400 mt-1.5">Papalit kay: <span class="font-medium text-slate-500 dark:text-slate-300">${s.replacingEmployee}</span></p>`
+        ? `<p class="text-[11px] text-slate-400 mt-1.5">Papalit kay: <span class="font-medium text-slate-500 dark:text-slate-300">${esc(s.replacingEmployee)}</span></p>`
         : '';
       return `
         <div class="border border-slate-100 dark:border-white/10 rounded-xl p-3.5">
           <div class="flex items-center justify-between gap-2 mb-1.5">
             <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ${typeColor}">${typeLabel}</span>
-            <span class="text-xs text-slate-400 dark:text-slate-500">${s.date || '—'}</span>
+            <span class="text-xs text-slate-400 dark:text-slate-500">${esc(s.date || '—')}</span>
           </div>
-          <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">${s.location || s.shiftName || '—'}</p>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${timeIn || '—'} – ${timeOut || '—'}</p>
+          <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">${esc(s.location || s.shiftName || '—')}</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${esc(timeIn || '—')} – ${esc(timeOut || '—')}</p>
           ${replacing}
         </div>`;
     }).join('');
@@ -1178,11 +1227,15 @@ async function loadMySchedule() {
   }
 }
 
+// --- Init -------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
   closeMobileSidebar();
   setStep(1);
-  loadCurrentUser().then(loadMySchedule);
+  loadCurrentUser().then(() => {
+    loadMySchedule();
+    refreshNotifBadge();
+  });
 
   window.addEventListener('resize', () => {
     if (isDesktop()) {
