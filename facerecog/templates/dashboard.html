@@ -575,32 +575,6 @@
   </div>
 </div>
 
-<!-- Add Leave Request Modal -->
-<div id="leave-modal-overlay" class="hidden fixed inset-0 z-40 bg-slate-900/40 flex items-center justify-center p-4">
-  <div class="bg-white dark:bg-ink-700 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto scrollbar-thin fade-in">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-white/10">
-      <h3 class="font-bold text-slate-800 dark:text-slate-100">New Leave Request</h3>
-      <button id="leave-modal-close" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl leading-none">&times;</button>
-    </div>
-    <form id="leave-form" class="px-6 py-5 space-y-4">
-      <div>
-        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Employee name</label>
-        <select id="leave-name" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-400/40 font-mono">
-          <option value="">Select an employee</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Dates</label>
-        <input id="leave-dates" type="text" placeholder="e.g. May 20 - May 22" class="w-full border border-slate-200 dark:border-white/10 dark:bg-ink-800 dark:text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-400/40" />
-      </div>
-      <div class="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-2">
-        <button type="button" id="leave-cancel-btn" class="text-sm font-semibold text-slate-600 dark:text-slate-300 px-4 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-white/5 transition">Cancel</button>
-        <button type="submit" class="text-sm font-semibold text-brand-900 bg-gold-400 px-4 py-2 rounded-lg hover:bg-gold-500 transition">Submit Request</button>
-      </div>
-    </form>
-  </div>
-</div>
-
 <div id="toast-container" class="fixed bottom-4 right-4 left-4 sm:left-auto sm:bottom-6 sm:right-6 z-50 space-y-2"></div>
 
 
@@ -641,7 +615,7 @@ const subPanels = {
   },
   'leave-management': {
     title: 'Leave Management',
-    subtitle: 'Handle leave requests and balances efficiently.',
+    subtitle: 'Review and process leave requests submitted by employees.',
     color: 'gold',
     icon: '<rect x="3" y="7" width="18" height="13" rx="2"/><path stroke-linecap="round" d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/>',
     stats: [['Pending Requests','0'], ['Approved','0'], ['Declined','0'], ['On Leave Today','0']],
@@ -675,6 +649,16 @@ async function apiGet(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error('Request failed: ' + url);
   return res.json();
+}
+
+// I-escape ang lahat ng galing sa user bago ilagay sa innerHTML. Ang
+// `dates` ng leave request ay galing sa USER (POST /api/user/leaves) —
+// kung walang escape, puwedeng magpasok ng <img onerror=...> na tatakbo
+// sa browser ng admin.
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
 }
 
 // PALITAN NA GAMIT ANG secureFetch — awtomatikong nagsasama ng CSRF token
@@ -811,6 +795,10 @@ function showToast(message, type='info') {
 }
 
 function setActivePanel(key) {
+  // Laging sariwa ang leave list kapag binuksan ang Leave Management —
+  // para makita agad ang bagong request na isinumite ng user.
+  if (key === 'leave-management') refreshLeaves();
+
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
   const target = document.getElementById('panel-' + key);
   target.classList.remove('hidden');
@@ -916,15 +904,19 @@ function renderSubPanel(key) {
           <tbody id="full-schedule-tbody" class="divide-y divide-slate-100 dark:divide-white/10"></tbody>
         </table>
       </div>`;
-  } else if (data.isLeaveTable) {
+   } else if (data.isLeaveTable) {
     bodyHtml = `
       <div class="bg-white dark:bg-ink-800 dark:border-white/5 rounded-2xl border border-slate-100 shadow-sm table-scroll">
-        <table class="w-full text-sm min-w-[520px]">
+        <table class="w-full text-sm min-w-[980px]">
           <thead class="bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wide">
             <tr>
               <th class="text-left px-5 py-3 font-semibold">Full Name</th>
               <th class="text-left px-5 py-3 font-semibold">Employee QR ID</th>
-              <th class="text-left px-5 py-3 font-semibold">Leave Date</th>
+              <th class="text-left px-5 py-3 font-semibold">Leave Type</th>
+              <th class="text-left px-5 py-3 font-semibold">Start Date</th>
+              <th class="text-left px-5 py-3 font-semibold">End Date</th>
+              <th class="text-left px-5 py-3 font-semibold">Reason</th>
+              <th class="text-left px-5 py-3 font-semibold">Date &amp; Time Submitted</th>
               <th class="text-left px-5 py-3 font-semibold">Day Processed</th>
               <th class="text-left px-5 py-3 font-semibold">Status</th>
               <th class="text-left px-5 py-3 font-semibold">Actions</th>
@@ -969,9 +961,9 @@ function renderSubPanel(key) {
         ← Back to Dashboard
       </button>
       ` : data.isLeaveTable ? `
-      <button id="btn-new-leave" class="text-sm font-semibold text-white ${c.solid} px-4 py-2 rounded-lg hover:opacity-90 transition sm:ml-auto flex items-center gap-1.5">
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14"/></svg>
-        New Leave Request
+      <button id="btn-refresh-leaves" class="text-sm font-semibold text-white ${c.solid} px-4 py-2 rounded-lg hover:opacity-90 transition sm:ml-auto flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.836 0a8.001 8.001 0 00-15.418-2M20 20v-5h-.582m-15.836 0a8.001 8.001 0 0015.418 2"/></svg>
+        Refresh
       </button>
       <button data-panel="dashboard" class="nav-item text-sm font-semibold ${c.text} ${c.bg} px-4 py-2 rounded-lg hover:opacity-80 transition">
         ← Back to Dashboard
@@ -1001,7 +993,8 @@ function renderSubPanel(key) {
   }
   if (data.isLeaveTable) {
     renderFullLeaveTable();
-    document.getElementById('btn-new-leave').addEventListener('click', openLeaveModal);
+    const refreshLeavesBtn = document.getElementById('btn-refresh-leaves');
+    if (refreshLeavesBtn) refreshLeavesBtn.addEventListener('click', () => refreshLeaves({ force: true }));
   }
   if (data.isScheduleTable) {
     renderFullScheduleTable();
@@ -1461,104 +1454,187 @@ async function submitScheduleForm(e) {
   }
 }
 
-function refreshLeaveModalOptions() {
-  const select = document.getElementById('leave-name');
-  if (!select) return;
-  const placeholder = `<option value="">Select an employee</option>`;
-  select.innerHTML = placeholder + (employeeRoster.length
-    ? employeeRoster.map(name => `<option value="${name}">${employeeOptionLabel(name)}</option>`).join('')
-    : '');
+// ==========================================
+// LEAVE MANAGEMENT — mga leave request na isinumite ng user
+// (POST /api/user/leaves) at pinoproseso ng admin dito.
+//
+// Ang backend ay nagbabalik ng snake_case (qr_id, processed_at,
+// created_at). Dati ay camelCase ang binabasa ng frontend kaya laging
+// "Pending" ang "Day Processed" at blangko ang QR ID.
+// ==========================================
+function leaveWeekdayName(dateLike) {
+  const d = new Date(dateLike);
+  return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { weekday: 'long' });
 }
-
-function openLeaveModal() {
-  refreshEmployeeRoster().then(refreshLeaveModalOptions);
-  refreshLeaveModalOptions();
-  document.getElementById('leave-modal-overlay').classList.remove('hidden');
+function leaveDateOnly(dateLike) {
+  const d = new Date(dateLike);
+  return isNaN(d.getTime())
+    ? String(dateLike)
+    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
-function closeLeaveModal() {
-  document.getElementById('leave-modal-overlay').classList.add('hidden');
+function leaveDateShort(dateLike) {
+  if (!dateLike) return '<span class="text-slate-400">—</span>';
+  const d = new Date(dateLike + 'T00:00:00');
+  return isNaN(d.getTime())
+    ? esc(dateLike)
+    : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
-
-async function submitLeaveForm(e) {
-  e.preventDefault();
-  const name = document.getElementById('leave-name').value.trim();
-  const dates = document.getElementById('leave-dates').value.trim();
-  if (!name || !dates) {
-    showToast('Please select an employee and fill out dates.', 'error');
-    return;
-  }
-  try {
-    const data = await apiPost('/api/leaves', { name, dates, qrId: employeeQrId(name) });
-    leaveData.push(data.leave);
-    showToast(`Leave request submitted for ${name}.`, 'success');
-    renderFullLeaveTable();
-    renderDashboardWidgets();
-    closeLeaveModal();
-    document.getElementById('leave-form').reset();
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
+function leaveSubmittedLabel(createdAt) {
+  if (!createdAt) return '<span class="text-slate-400">—</span>';
+  const d = new Date(createdAt);
+  if (isNaN(d.getTime())) return esc(createdAt);
+  const datePart = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const timePart = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return `${datePart} <span class="text-[11px] text-slate-400">${timePart}</span>`;
 }
 
 function renderFullLeaveTable() {
   const tbody = document.getElementById('full-leave-tbody');
   if (!tbody) return;
+
   if (leaveData.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" class="px-5 py-8 text-center text-sm text-slate-400">No leave requests.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="px-5 py-8 text-center text-sm text-slate-400">No leave requests.</td></tr>`;
     return;
   }
-  tbody.innerHTML = leaveData.map((l) => {
+
+  // Pending muna, tapos pinakabago sa taas.
+  const rows = leaveData.slice().sort((a, b) => {
+    const pa = a.status === 'Pending' ? 0 : 1;
+    const pb = b.status === 'Pending' ? 0 : 1;
+    return pa - pb || (b.id - a.id);
+  });
+
+  tbody.innerHTML = rows.map((l) => {
     const statusColor = l.status === 'Approved' ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10'
       : l.status === 'Declined' ? 'text-red-600 bg-red-50 dark:bg-red-500/10'
       : 'text-gold-600 bg-gold-400/10';
+
     const actions = l.status === 'Pending'
       ? `<button class="approve-btn text-xs font-semibold text-emerald-600 hover:underline mr-3" data-id="${l.id}">Approve</button>
          <button class="decline-btn text-xs font-semibold text-red-600 hover:underline" data-id="${l.id}">Decline</button>`
       : `<span class="text-xs text-slate-400">No action</span>`;
-   
-    const qrId = l.qrId || l.employeeId || employeeQrId(l.name);
-    const processed = l.processedAt || l.processedOn || l.updatedAt || l.createdAt || '';
-    const dayName = processed ? weekdayName(processed) : '—';
-    const processedLabel = processed ? formatDateOnly(processed) : '<span class="text-slate-400">Pending</span>';
+
+    const qrId = l.qr_id || l.qrId || l.employeeId || employeeQrId(l.name);
+    const processed = l.processed_at || l.processedAt || '';
+    const processedLabel = processed
+      ? leaveDateOnly(processed)
+      : '<span class="text-slate-400">Pending</span>';
+    const dayName = processed ? leaveWeekdayName(processed) : '';
+
+    // Fallback sa lumang `dates` string kung walang structured fields pa
+    // (mga leave requests na na-file bago ang migration na ito).
+    const leaveType = l.leave_type ? esc(l.leave_type) : '<span class="text-slate-400">—</span>';
+    const startDate = l.start_date ? leaveDateShort(l.start_date) : (l.dates ? esc(l.dates) : '<span class="text-slate-400">—</span>');
+    const endDate = l.end_date ? leaveDateShort(l.end_date) : '<span class="text-slate-400">—</span>';
+    const reason = l.reason ? esc(l.reason) : '<span class="text-slate-400">—</span>';
+
     return `
-      <tr class="hover:bg-slate-50 dark:hover:bg-white/5">
-        <td class="px-5 py-3 font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">${l.name}</td>
-        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap font-mono text-xs">${qrId}</td>
-        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${l.dates}</td>
-        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${processedLabel}<span class="ml-2 text-[11px] text-slate-400">${dayName !== '—' ? dayName : ''}</span></td>
-        <td class="px-5 py-3"><span class="text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor}">${l.status}</span></td>
+      <tr class="hover:bg-slate-50 dark:hover:bg-white/5 align-top">
+        <td class="px-5 py-3 font-medium text-slate-800 dark:text-slate-100 whitespace-nowrap">${esc(l.name)}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap font-mono text-xs">${esc(qrId)}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${leaveType}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${startDate}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${endDate}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 max-w-[220px] whitespace-normal">${reason}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${leaveSubmittedLabel(l.created_at)}</td>
+        <td class="px-5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">${processedLabel}<span class="ml-2 text-[11px] text-slate-400">${esc(dayName)}</span></td>
+        <td class="px-5 py-3"><span class="text-xs font-semibold px-2.5 py-1 rounded-full ${statusColor}">${esc(l.status)}</span></td>
         <td class="px-5 py-3 whitespace-nowrap">${actions}</td>
       </tr>`;
   }).join('');
 
-  function weekdayName(dateLike) {
-    const d = new Date(dateLike);
-    if (isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString(undefined, { weekday: 'long' });
-  }
-  function formatDateOnly(dateLike) {
-    const d = new Date(dateLike);
-    if (isNaN(d.getTime())) return String(dateLike);
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  }
-
-  tbody.querySelectorAll('.approve-btn').forEach(btn => btn.addEventListener('click', () => handleLeaveAction(+btn.dataset.id, 'approve')));
-  tbody.querySelectorAll('.decline-btn').forEach(btn => btn.addEventListener('click', () => handleLeaveAction(+btn.dataset.id, 'decline')));
+  tbody.querySelectorAll('.approve-btn').forEach(btn => btn.addEventListener('click', () => handleLeaveAction(+btn.dataset.id, 'approve', btn)));
+  tbody.querySelectorAll('.decline-btn').forEach(btn => btn.addEventListener('click', () => handleLeaveAction(+btn.dataset.id, 'decline', btn)));
 }
-
-async function handleLeaveAction(id, action) {
+async function handleLeaveAction(id, action, clickedBtn) {
+  // I-disable ang buttons ng row habang pinoproseso, iwas double-click.
+  if (clickedBtn) {
+    const cell = clickedBtn.parentElement;
+    if (cell) cell.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = '.4'; });
+  }
   try {
     const data = await apiPost(`/api/leaves/${id}/${action}`);
     const idx = leaveData.findIndex(l => l.id === id);
     if (idx !== -1) leaveData[idx] = data.leave;
-    showToast(`${data.leave.name}'s leave request ${data.leave.status.toLowerCase()}.`, action === 'approve' ? 'success' : 'error');
+    else leaveData.push(data.leave);
+    leaveDataSignature = leaveSignature(leaveData);
+    showToast(`${data.leave.name}'s leave request ${data.leave.status.toLowerCase()}. The employee was notified.`, action === 'approve' ? 'success' : 'error');
     renderFullLeaveTable();
+    renderLeaveStats();
     renderDashboardWidgets();
     refreshStats();
   } catch (e) {
     showToast(e.message, 'error');
+    renderFullLeaveTable();
   }
 }
+
+// I-update lang ang 4 na stat cards ng Leave panel (hindi buong panel).
+function renderLeaveStats() {
+  const panel = document.getElementById('panel-leave-management');
+  if (!panel) return;
+  const cards = panel.querySelectorAll('.grid.grid-cols-2 p.text-2xl');
+  if (cards.length < 4) return;
+  cards[0].textContent = String(leaveData.filter(l => l.status === 'Pending').length);
+  cards[1].textContent = String(leaveData.filter(l => l.status === 'Approved').length);
+  cards[2].textContent = String(leaveData.filter(l => l.status === 'Declined').length);
+  cards[3].textContent = String(leaveData.filter(l => l.status === 'Approved').length);
+}
+
+// ---- Auto-refresh ng leave requests ----
+// Dati: isang beses lang nilo-load ang leaveData (loadInitialData), kaya
+// hindi lumalabas ang bagong request ng user hangga't hindi nagre-reload
+// ang admin. Ngayon: kada 20s, kapag bumalik sa tab, at kapag binuksan
+// ang Leave Management / pinindot ang Refresh.
+let leaveDataSignature = null;
+
+function leaveSignature(list) {
+  return list.map(l => `${l.id}:${l.status}`).join('|');
+}
+
+async function refreshLeaves(opts) {
+  const force = !!(opts && opts.force);
+  try {
+    const lv = await apiGet('/api/leaves');
+    const incoming = lv.leaves || [];
+    const sig = leaveSignature(incoming);
+
+    // Walang nagbago — huwag nang i-re-render (iwas flicker).
+    if (!force && sig === leaveDataSignature) return;
+
+    const knownIds = new Set(leaveData.map(l => l.id));
+    const newPending = incoming.filter(l => l.status === 'Pending' && !knownIds.has(l.id));
+
+    leaveData = incoming;
+    const firstLoad = leaveDataSignature === null;
+    leaveDataSignature = sig;
+
+    renderDashboardWidgets();
+    refreshStats();
+
+    const panel = document.getElementById('panel-leave-management');
+    if (panel && !panel.classList.contains('hidden')) {
+      renderFullLeaveTable();
+      renderLeaveStats();
+    }
+
+    // Toast lang kung may talagang bagong request (hindi sa unang load).
+    if (!firstLoad && newPending.length) {
+      showToast(
+        newPending.length === 1
+          ? `New leave request from ${newPending[0].name}.`
+          : `${newPending.length} new leave requests.`,
+        'info'
+      );
+    }
+  } catch (e) { /* silent — subukan ulit sa susunod na interval */ }
+}
+
+(function startLeavePolling() {
+  const INTERVAL_MS = 20 * 1000;
+  setInterval(() => { if (!document.hidden) refreshLeaves(); }, INTERVAL_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshLeaves(); });
+})();
 
 // ==========================================
 // TIMESHEET MANAGEMENT
@@ -2400,20 +2476,37 @@ function renderDashboardWidgets() {
 
   const leaveList = document.getElementById('leave-list');
   if (leaveList) {
-    const preview = leaveData.slice(-3).reverse();
+    // Pending muna, tapos pinakabago — para agad makita ng admin ang
+    // bagong request ng user sa dashboard.
+    const preview = leaveData.slice().sort((a, b) => {
+      const pa = a.status === 'Pending' ? 0 : 1;
+      const pb = b.status === 'Pending' ? 0 : 1;
+      return pa - pb || (b.id - a.id);
+    }).slice(0, 3);
     leaveList.innerHTML = preview.length ? preview.map(l => {
       const statusColor = l.status === 'Approved' ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10'
         : l.status === 'Declined' ? 'text-red-600 bg-red-50 dark:bg-red-500/10'
         : 'text-gold-600 bg-gold-400/10';
+      // Pending = show Accept/Decline directly on the dashboard.
+      // Already-processed requests just show their status badge.
+      const actionCell = l.status === 'Pending'
+        ? `<div class="flex items-center gap-2 shrink-0">
+             <button class="dash-approve-btn text-[11px] font-semibold text-emerald-600 hover:underline" data-id="${l.id}">Accept</button>
+             <button class="dash-decline-btn text-[11px] font-semibold text-red-600 hover:underline" data-id="${l.id}">Decline</button>
+           </div>`
+        : `<span class="status-badge text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0 ${statusColor}">${esc(l.status)}</span>`;
       return `
-      <li class="flex items-center justify-between gap-3" data-name="${l.name}">
+      <li class="flex items-center justify-between gap-3" data-name="${esc(l.name)}">
         <div class="min-w-0">
-          <p class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${l.name}</p>
-          <p class="text-xs text-slate-500 dark:text-slate-400">${l.dates}</p>
+          <p class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${esc(l.name)}</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">${esc(l.dates)}</p>
         </div>
-        <span class="status-badge text-[11px] font-semibold px-2.5 py-1 rounded-full shrink-0 ${statusColor}">${l.status}</span>
+        ${actionCell}
       </li>`;
     }).join('') : `<li id="leave-list-empty" class="text-sm text-slate-400 text-center py-6">No leave requests.</li>`;
+
+    leaveList.querySelectorAll('.dash-approve-btn').forEach(btn => btn.addEventListener('click', () => handleLeaveAction(+btn.dataset.id, 'approve', btn)));
+    leaveList.querySelectorAll('.dash-decline-btn').forEach(btn => btn.addEventListener('click', () => handleLeaveAction(+btn.dataset.id, 'decline', btn)));
   }
 }
 
@@ -3175,6 +3268,7 @@ async function loadInitialData() {
     applyEmployeesResponse(emp);
     scheduleData = sched.schedules;
     leaveData = lv.leaves;
+    leaveDataSignature = leaveSignature(leaveData);
     notifications = notif.notifications;
   } catch (e) {
     showToast('Could not reach the backend. Is app.py running?', 'error');
@@ -3281,13 +3375,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target.id === 'schedule-modal-overlay') closeScheduleModal();
   });
 
-  document.getElementById('leave-modal-close').addEventListener('click', closeLeaveModal);
-  document.getElementById('leave-cancel-btn').addEventListener('click', closeLeaveModal);
-  document.getElementById('leave-form').addEventListener('submit', submitLeaveForm);
-  document.getElementById('leave-modal-overlay').addEventListener('click', (e) => {
-    if (e.target.id === 'leave-modal-overlay') closeLeaveModal();
-  });
-
   const monRefreshBtn = document.getElementById('btn-refresh-monitoring');
   if (monRefreshBtn) monRefreshBtn.addEventListener('click', loadMonitoring);
   const monFilterSelect = document.getElementById('monitoring-filter-status');
@@ -3345,5 +3432,5 @@ document.addEventListener('DOMContentLoaded', async () => {
   resetIdleTimer();
 })();
 </script>
-</body></document_content></document>
+</body>
 </html>

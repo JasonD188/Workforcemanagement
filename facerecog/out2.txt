@@ -1,0 +1,149 @@
+﻿
+> apiuser_routes.py:65:# Ang `leaves` table ay may NOT NULL na `employee_id` column (hiwalay sa
+  apiuser_routes.py:66:# `qr_id`). Depende sa type nito ang ilalagay:
+  apiuser_routes.py:67:#   - text/varchar  -> ang badge/QR id (hal. "f9a53db4")
+  apiuser_routes.py:68:#   - integer/uuid  -> ang primary key (`id`) ng row sa `employees`
+  apiuser_routes.py:69:# Isang beses lang tinitingnan ang type at naka-cache.
+> apiuser_routes.py:70:_LEAVES_EMP_COL_IS_TEXT = None
+  apiuser_routes.py:71:
+  apiuser_routes.py:72:
+  apiuser_routes.py:73:def _leave_employee_fk(cur, badge_id, registered_pk):
+> apiuser_routes.py:74:    global _LEAVES_EMP_COL_IS_TEXT
+> apiuser_routes.py:75:    if _LEAVES_EMP_COL_IS_TEXT is None:
+  apiuser_routes.py:76:        cur.execute(
+  apiuser_routes.py:77:            """
+  apiuser_routes.py:78:            SELECT data_type FROM information_schema.columns
+> apiuser_routes.py:79:            WHERE table_name = 'leaves' AND column_name = 'employee_id'
+  apiuser_routes.py:80:            """
+  apiuser_routes.py:81:        )
+  apiuser_routes.py:82:        r = cur.fetchone()
+> apiuser_routes.py:83:        _LEAVES_EMP_COL_IS_TEXT = bool(r) and r[0] in (
+  apiuser_routes.py:84:            "character varying", "text", "character"
+  apiuser_routes.py:85:        )
+> apiuser_routes.py:86:    return badge_id if _LEAVES_EMP_COL_IS_TEXT else registered_pk
+  apiuser_routes.py:87:
+  apiuser_routes.py:88:
+  apiuser_routes.py:89:# ---------------------------------------------------------------------
+  apiuser_routes.py:90:# Location check-in
+  apiuser_routes.py:91:# ---------------------------------------------------------------------
+  apiuser_routes.py:92:
+> apiuser_routes.py:125:            INSERT INTO location_checkins
+  apiuser_routes.py:126:                (employee_id, employee_name, scan_id, lat, lng, accuracy, 
+checkin_timestamp, created_at)
+  apiuser_routes.py:127:            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+  apiuser_routes.py:128:            """,
+  apiuser_routes.py:129:            (employee_id, employee_name, scan_id, lat, lng, accuracy,
+  apiuser_routes.py:130:             timestamp, datetime.utcnow())
+  apiuser_routes.py:131:        )
+> apiuser_routes.py:159:                    UPDATE scan_logs
+  apiuser_routes.py:160:                    SET status = %s, location_lat = %s, location_lng = %s,
+  apiuser_routes.py:161:                        location_accuracy = %s, note = NULL
+  apiuser_routes.py:162:                    WHERE id = %s
+  apiuser_routes.py:163:                    """,
+  apiuser_routes.py:164:                    (final_status, lat, lng, accuracy, scan_id)
+  apiuser_routes.py:165:                )
+> apiuser_routes.py:191:# `leaves` table ang binabasa ng Admin Dashboard > Leave Management
+> apiuser_routes.py:192:# (ApiController.get_leaves()), kaya awtomatikong lalabas dito ang bawat
+  apiuser_routes.py:193:# leave request na isinumite ng user.
+  apiuser_routes.py:194:#
+  apiuser_routes.py:195:# Structured fields (leave_type, start_date, end_date, reason) ang
+  apiuser_routes.py:196:# sinasave bilang hiwalay na columns. Ang `dates` ay pinapanatili pa rin
+  apiuser_routes.py:197:# bilang legacy/fallback display string.
+  apiuser_routes.py:198:
+> apiuser_routes.py:199:@apiuser_bp.route("/api/user/leaves", methods=["POST"])
+  apiuser_routes.py:200:def create_user_leave_request():
+  apiuser_routes.py:201:    """Isinusumite ng employee/user ang sarili niyang leave request.
+  apiuser_routes.py:202:
+  apiuser_routes.py:203:    Ang `name` ay kinukuha sa DB base sa employee_id (hindi sa JSON body)
+  apiuser_routes.py:204:    para hindi mai-spoof. Laging "Pending" sa unang pagsumite; ang admin
+  apiuser_routes.py:205:    ang mag-a-approve/decline.
+> apiuser_routes.py:269:            SELECT 1 FROM leaves
+  apiuser_routes.py:270:            WHERE qr_id = %s AND leave_type = %s
+  apiuser_routes.py:271:              AND start_date = %s AND end_date = %s AND status = 'Pending'
+  apiuser_routes.py:272:            LIMIT 1
+  apiuser_routes.py:273:            """,
+  apiuser_routes.py:274:            (employee_id, leave_type, start_date, end_date)
+  apiuser_routes.py:275:        )
+> apiuser_routes.py:281:            INSERT INTO leaves (employee_id, name, dates, qr_id, status, 
+created_at,
+  apiuser_routes.py:282:                                 leave_type, start_date, end_date, reason)
+  apiuser_routes.py:283:            VALUES (%s, %s, %s, %s, 'Pending', NOW(), %s, %s, %s, %s)
+  apiuser_routes.py:284:            RETURNING {LEAVE_COLS}
+  apiuser_routes.py:285:            """,
+  apiuser_routes.py:286:            (leave_employee_fk, employee_name, dates, employee_id,
+  apiuser_routes.py:287:             leave_type, start_date, end_date, reason)
+> apiuser_routes.py:305:@apiuser_bp.route("/api/user/leaves", methods=["GET"])
+  apiuser_routes.py:306:def get_user_leave_requests():
+  apiuser_routes.py:307:    """Ang sariling leave history/status (Pending/Approved/Declined) ng user."""
+  apiuser_routes.py:308:    employee_id = resolve_employee_id(request.args.get("employee_id"))
+  apiuser_routes.py:309:    if not employee_id:
+  apiuser_routes.py:310:        return jsonify({"error": "Not signed in."}), 401
+  apiuser_routes.py:311:
+> apiuser_routes.py:318:            FROM leaves
+  apiuser_routes.py:319:            WHERE qr_id = %s
+  apiuser_routes.py:320:            ORDER BY id DESC
+  apiuser_routes.py:321:            """,
+  apiuser_routes.py:322:            (employee_id,)
+  apiuser_routes.py:323:        )
+  apiuser_routes.py:324:        columns = [desc[0] for desc in cur.description]
+> apiuser_routes.py:325:        leaves = [_json_safe(dict(zip(columns, r))) for r in cur.fetchall()]
+  apiuser_routes.py:326:        cur.close()
+  apiuser_routes.py:327:    except Exception:
+  apiuser_routes.py:328:        traceback.print_exc()
+  apiuser_routes.py:329:        return jsonify({"error": "Failed to load leave requests."}), 500
+  apiuser_routes.py:330:    finally:
+  apiuser_routes.py:331:        conn.close()
+> apiuser_routes.py:333:    return jsonify({"leaves": leaves})
+  apiuser_routes.py:334:
+  apiuser_routes.py:335:
+  apiuser_routes.py:336:#  Notifications (user-facing)
+  apiuser_routes.py:337:#
+> apiuser_routes.py:338:# Per-employee ang notifications — galing sa `user_notifications` table
+> apiuser_routes.py:339:# (tingnan ang 1_user_notifications.sql). Ginagawa ang row nito sa
+  apiuser_routes.py:340:# ApiController/_set_leave_status() sa tuwing ina-approve o dine-decline
+  apiuser_routes.py:341:# ng admin ang leave request, sa parehong transaction ng status update.
+  apiuser_routes.py:342:#
+> apiuser_routes.py:343:# Katulad ng /api/user/leaves, walang @role_required dito dahil para ito
+  apiuser_routes.py:344:# sa employee, hindi sa admin. (Ang /api/notifications sa api_routes.py ay
+  apiuser_routes.py:345:# admin-only at ibang bagay — huwag itong gamitin sa user dashboard.)
+  apiuser_routes.py:346:
+  apiuser_routes.py:347:@apiuser_bp.route("/api/user/notifications", methods=["GET"])
+> apiuser_routes.py:348:def get_user_notifications():
+  apiuser_routes.py:349:    """Notifications ng isang employee (pinakabago muna) + unread count."""
+  apiuser_routes.py:350:    employee_id = resolve_employee_id(request.args.get("employee_id"))
+  apiuser_routes.py:351:    if not employee_id:
+  apiuser_routes.py:352:        return jsonify({"error": "Not signed in."}), 401
+  apiuser_routes.py:353:
+  apiuser_routes.py:354:    conn = get_connection()
+> apiuser_routes.py:360:            FROM user_notifications
+  apiuser_routes.py:361:            WHERE employee_id = %s
+  apiuser_routes.py:362:            ORDER BY id DESC
+  apiuser_routes.py:363:            LIMIT 50
+  apiuser_routes.py:364:            """,
+  apiuser_routes.py:365:            (employee_id,)
+  apiuser_routes.py:366:        )
+> apiuser_routes.py:372:            "SELECT COUNT(*) FROM user_notifications WHERE employee_id = %s AND 
+is_read = FALSE",
+  apiuser_routes.py:373:            (employee_id,)
+  apiuser_routes.py:374:        )
+  apiuser_routes.py:375:        unread = cur.fetchone()[0]
+  apiuser_routes.py:376:        cur.close()
+  apiuser_routes.py:377:    except Exception:
+  apiuser_routes.py:378:        traceback.print_exc()
+> apiuser_routes.py:387:def mark_user_notifications_read():
+  apiuser_routes.py:388:    """I-mark na read ang lahat ng notifications ng employee."""
+  apiuser_routes.py:389:    data = request.get_json(silent=True) or {}
+  apiuser_routes.py:390:    employee_id = resolve_employee_id(data.get("employee_id"))
+  apiuser_routes.py:391:    if not employee_id:
+  apiuser_routes.py:392:        return jsonify({"error": "Not signed in."}), 401
+  apiuser_routes.py:393:
+> apiuser_routes.py:398:            "UPDATE user_notifications SET is_read = TRUE WHERE employee_id = %s 
+AND is_read = FALSE",
+  apiuser_routes.py:399:            (employee_id,)
+  apiuser_routes.py:400:        )
+  apiuser_routes.py:401:        conn.commit()
+  apiuser_routes.py:402:        cur.close()
+  apiuser_routes.py:403:    except Exception:
+  apiuser_routes.py:404:        traceback.print_exc()
+
+

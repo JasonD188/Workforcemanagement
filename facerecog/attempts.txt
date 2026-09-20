@@ -1,0 +1,39 @@
+﻿
+  auth\admin_routes.py:45:def _log_attempt(employee_id_input, stage, success):
+  auth\admin_routes.py:46:    conn = get_connection()
+  auth\admin_routes.py:47:    try:
+  auth\admin_routes.py:48:        cur = conn.cursor()
+  auth\admin_routes.py:49:        cur.execute(
+  auth\admin_routes.py:50:            """
+> auth\admin_routes.py:51:            INSERT INTO admin_login_attempts (employee_id_input, stage, 
+success, ip_address)
+  auth\admin_routes.py:52:            VALUES (%s, %s, %s, %s)
+  auth\admin_routes.py:53:            """,
+  auth\admin_routes.py:54:            (employee_id_input, stage, success, _get_client_ip())
+  auth\admin_routes.py:55:        )
+  auth\admin_routes.py:56:        conn.commit()
+  auth\admin_routes.py:57:    except Exception as e:
+  auth\admin_routes.py:58:        print(f"[LOG] Could not save login attempt: {e}")
+  auth\admin_routes.py:59:        conn.rollback()
+  auth\admin_routes.py:60:    finally:
+  auth\admin_routes.py:61:        conn.close()
+  auth\admin_routes.py:320:    conn = get_connection()
+  auth\admin_routes.py:321:    try:
+  auth\admin_routes.py:322:        cur = conn.cursor()
+  auth\admin_routes.py:323:        cur.execute(
+  auth\admin_routes.py:324:            """
+  auth\admin_routes.py:325:            SELECT id, employee_id_input, stage, success, ip_address, 
+attempted_at
+> auth\admin_routes.py:326:            FROM admin_login_attempts
+  auth\admin_routes.py:327:            ORDER BY attempted_at DESC
+  auth\admin_routes.py:328:            LIMIT %s
+  auth\admin_routes.py:329:            """,
+  auth\admin_routes.py:330:            (limit,)
+  auth\admin_routes.py:331:        )
+  auth\admin_routes.py:332:        columns = [desc[0] for desc in cur.description]
+  auth\admin_routes.py:333:        rows = [dict(zip(columns, row)) for row in cur.fetchall()]
+  auth\admin_routes.py:334:    finally:
+  auth\admin_routes.py:335:        conn.close()
+  auth\admin_routes.py:336:
+
+

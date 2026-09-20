@@ -619,47 +619,115 @@ async function loadAttendanceSummary() {
   }
 }
 
+// --- Leave form helpers (previously missing — this is why Submit did nothing) ---
+function myEmployeeId() {
+  return currentEmployeeId || loggedInEmployeeId;
+}
+
+function esc(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
+}
+
+function fmtLeaveDate(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function leaveStatusClasses(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'approved') return 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10';
+  if (s === 'rejected' || s === 'denied') return 'text-red-600 bg-red-50 dark:bg-red-500/10';
+  return 'text-amber-600 bg-amber-50 dark:bg-amber-500/10';
+}
+
+function showLeaveFormMsg(msg, isSuccess) {
+  let msgEl = document.getElementById('leave-form-msg');
+  if (!msgEl) {
+    msgEl = document.createElement('p');
+    msgEl.id = 'leave-form-msg';
+    document.getElementById('leave-request-form').appendChild(msgEl);
+  }
+  msgEl.textContent = msg;
+  msgEl.className = isSuccess
+    ? 'text-sm text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl px-3.5 py-2.5 mt-1'
+    : 'text-sm text-red-600 bg-red-50 dark:bg-red-500/10 rounded-xl px-3.5 py-2.5 mt-1';
+}
+
 document.getElementById('leave-request-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const payload = {
-    employee_id: currentEmployeeId || '',
-    type: document.getElementById('leave-type').value,
-    start_date: document.getElementById('leave-start').value,
-    end_date: document.getElementById('leave-end').value,
-    reason: document.getElementById('leave-reason').value,
-  };
+  const form = e.target;
+  const submitBtn = form.querySelector('button[type="submit"]');
+
+  const employeeId = myEmployeeId();
+  const type = document.getElementById('leave-type').value;
+  const start = document.getElementById('leave-start').value;
+  const end = document.getElementById('leave-end').value || start;
+  const reason = document.getElementById('leave-reason').value.trim();
+
+  if (!employeeId) { showLeaveFormMsg('Mag-sign in muna para makapag-file ng leave.', false); return; }
+  if (!start) { showLeaveFormMsg('Piliin ang Start Date.', false); return; }
+  if (end < start) { showLeaveFormMsg('Hindi puwedeng mas maaga ang End Date kaysa Start Date.', false); return; }
+
+  submitBtn.disabled = true;
   try {
-    // TODO: point this to your actual leave-request endpoint
-    const res = await secureFetch('/api/leave-request', {
+    const res = await secureFetch('/api/user/leaves', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        employee_id: employeeId,
+        leave_type: type,
+        start_date: start,
+        end_date: end,
+        reason,
+      }),
     });
-    if (res.ok) {
-      e.target.reset();
-      loadLeaveRequests();
-    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) throw new Error(data.error || 'Could not submit leave request.');
+
+    form.reset();
+    showLeaveFormMsg('Naisumite na ang leave request. Hintayin ang approval ng admin.', true);
+    loadLeaveRequests();
   } catch (err) {
-    console.error('Could not submit leave request:', err);
+    showLeaveFormMsg(err.message || 'Could not submit leave request.', false);
+  } finally {
+    submitBtn.disabled = false;
   }
 });
 
 async function loadLeaveRequests() {
-  if (!currentEmployeeId) return;
+  const employeeId = myEmployeeId();
+  if (!employeeId) return;
   const container = document.getElementById('leave-history-list');
   try {
-    const res = await fetch(`/api/leave-request?employee_id=${encodeURIComponent(currentEmployeeId)}`, { credentials: 'same-origin' });
+    const res = await fetch(`/api/user/leaves?employee_id=${encodeURIComponent(employeeId)}`, { credentials: 'same-origin' });
     if (!res.ok) return;
     const data = await res.json();
-    const rows = data.requests || [];
-    container.innerHTML = rows.length ? rows.map(r => `
-      <div class="border border-slate-100 dark:border-white/10 rounded-xl p-3.5">
-        <div class="flex items-center justify-between gap-2 mb-1">
-          <span class="text-sm font-semibold text-slate-800 dark:text-slate-100">${r.type || '—'}</span>
-          <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full text-amber-600 bg-amber-50 dark:bg-amber-500/10">${r.status || 'Pending'}</span>
-        </div>
-        <p class="text-xs text-slate-400">${r.start_date || '—'} – ${r.end_date || '—'}</p>
-      </div>`).join('') : '<p>Wala ka pang naisumiteng leave request.</p>';
+    const rows = data.leaves || [];
+
+    container.innerHTML = rows.length ? rows.map(r => {
+      const processed = r.processed_at ? new Date(r.processed_at) : null;
+      const processedLabel = processed && !isNaN(processed.getTime())
+        ? `<p class="text-[11px] text-slate-400 mt-1">${esc(r.status)} on ${esc(processed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }))}</p>`
+        : '';
+      const dateRange = r.start_date
+        ? (r.end_date && r.end_date !== r.start_date
+            ? `${esc(fmtLeaveDate(r.start_date))} – ${esc(fmtLeaveDate(r.end_date))}`
+            : esc(fmtLeaveDate(r.start_date)))
+        : esc(r.dates);
+      return `
+        <div class="border border-slate-100 dark:border-white/10 rounded-xl p-3.5">
+          <div class="flex items-center justify-between gap-2 mb-1">
+            <span class="text-sm font-semibold text-slate-800 dark:text-slate-100">${esc(r.leave_type || 'Leave')}</span>
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ${leaveStatusClasses(r.status)}">${esc(r.status || 'Pending')}</span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">${dateRange}</p>
+          ${r.reason ? `<p class="text-xs text-slate-400 mt-1">${esc(r.reason)}</p>` : ''}
+          ${processedLabel}
+        </div>`;
+    }).join('') : '<p>Wala ka pang naisumiteng leave request.</p>';
   } catch (err) {
     console.error('Could not load leave requests:', err);
   }
@@ -1032,21 +1100,17 @@ document.getElementById('btn-retry-location').addEventListener('click', retryLoc
 async function loadCurrentUser() {
   try {
     const res = await fetch('/api/me', { credentials: 'same-origin' });
-    if (!res.ok) return; // not signed in - keep placeholders
+    if (res.status === 401 || res.status === 403) {
+      window.location.href = '/loginuser';
+      return;
+    }
+    if (!res.ok) return;
     const data = await res.json();
-    if (!data.success || !data.employee) return;
-
-    const emp = data.employee;
-
-    loggedInEmployeeId = emp.employee_id || null;
-    loggedInName = emp.name || 'Employee';
-    loggedInPhoto = emp.photo_url || null;
-
-    document.getElementById('sidebar-employee-name').textContent = loggedInName;
-    document.getElementById('account-employee-name').textContent = loggedInName;
-    document.getElementById('account-employee-id').textContent = loggedInEmployeeId || '—';
-    currentEmployeeId = loggedInEmployeeId;
-    setProfilePhoto(loggedInPhoto);
+    if (!data.success || !data.employee) {
+      window.location.href = '/loginuser';
+      return;
+    }
+    // ...existing na code
   } catch (err) {
     console.error('Could not load current user:', err);
   }

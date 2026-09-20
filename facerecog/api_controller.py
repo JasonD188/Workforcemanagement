@@ -1,10 +1,19 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import base64
 
 from database.postgress import get_connection
 from config.appwrite_config import storage, bucket_id
 from api import fetch_recent_scans
 from api_analytics.analytics_export import AnalyticsExportController
+LEAVE_COLS = """
+    id,
+    name,
+    dates,
+    qr_id,
+    status,
+    created_at,
+    processed_at
+"""
 LOCATION_MATCH_WINDOW_MINUTES = 15
 
 _notifications = [
@@ -106,26 +115,133 @@ def _row_to_dict(cur, row):
     return dict(zip(columns, row))
 
 
+def _leave_employee_fk(cur, badge_id, registered_pk):
+    global _LEAVES_EMP_COL_IS_TEXT
+    if _LEAVES_EMP_COL_IS_TEXT is None:
+        cur.execute(
+            """
+            SELECT data_type FROM information_schema.columns
+            WHERE table_name = 'leaves' AND column_name = 'employee_id'
+            """
+        )
+        r = cur.fetchone()
+        _LEAVES_EMP_COL_IS_TEXT = bool(r) and r[0] in (
+            "character varying", "text", "character"
+        )
+    return badge_id if _LEAVES_EMP_COL_IS_TEXT else registered_pk
+
+
+class LeaveAlreadyProcessed(Exception):
+    """Itinataas kapag ang leave request ay hindi na Pending (naprocess na)."""
+
+    def __init__(self, status):
+        super().__init__(status)
+        self.status = status
+
+
+def _leave_json(d):
+    """Gawing ISO string ang lahat ng date/datetime para JSON-safe at
+    'YYYY-MM-DD' ang start_date/end_date (kaya parseable ng frontend)."""
+    for k, v in list(d.items()):
+        if isinstance(v, date):  # subclass ng date ang datetime
+            d[k] = v.isoformat()
+    return d
+
+
+# ---------------------------------------------------------------------
+# Leave approve / decline  (admin action sa request ng user)
+# ---------------------------------------------------------------------
+
+def _employee_id_for_leave(cur, leave):
+    """Kunin ang employee_id na tatanggap ng notification.
+
+    Ang leaves na isinumite ng user (POST /api/user/leaves) ay laging may
+    qr_id = employee_id. Ang leaves na ginawa ng admin sa "New Leave
+    Request" ay puwedeng walang qr_id — sa ganoon, hinahanap sa
+    employees/quick_add_employees gamit ang pangalan."""
+    qr_id = (leave.get("qr_id") or "").strip()
+    if qr_id:
+        return qr_id
+
+    name = (leave.get("name") or "").strip()
+    if not name:
+        return None
+
+    cur.execute(
+        "SELECT employee_id FROM employees WHERE name ILIKE %s AND deleted_at IS NULL LIMIT 1",
+        (name,),
+    )
+    row = cur.fetchone()
+    if row:
+        return row[0]
+
+    cur.execute(
+        "SELECT employee_id FROM quick_add_employees WHERE name ILIKE %s AND deleted_at IS NULL LIMIT 1",
+        (name,),
+    )
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
 def _set_leave_status(leave_id, status):
+    """I-update ang status ng leave AT gumawa ng notification para sa
+    employee — lahat sa IISANG transaction, kaya walang approve na walang
+    notification (at walang notification kung nag-fail ang update).
+
+    Pending lang ang puwedeng i-approve/decline. Kapag naprocess na
+    (Approved/Declined), magtataas ng LeaveAlreadyProcessed — hindi na
+    puwedeng baguhin ang naprocess na request (at walang duplicate
+    notification)."""
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE leaves
-            SET status = %s, processed_at = %s
-            WHERE id = %s
-            RETURNING id, name, dates, qr_id, status, created_at, processed_at
-            """,
-            (status, datetime.now().isoformat(), leave_id)
-        )
-        row = cur.fetchone()
-        conn.commit()
-        if not row:
+
+        # I-lock ang row at tingnan ang dating status.
+        cur.execute("SELECT status FROM leaves WHERE id = %s FOR UPDATE", (leave_id,))
+        prev = cur.fetchone()
+        if not prev:
+            conn.rollback()
             return None
-        return _row_to_dict(cur, row)
+        if prev[0] != "Pending":
+            conn.rollback()
+            raise LeaveAlreadyProcessed(prev[0])
+
+        cur.execute(
+            f"""
+            UPDATE leaves
+            SET status = %s, processed_at = NOW()
+            WHERE id = %s
+            RETURNING {LEAVE_COLS}
+            """,
+            (status, leave_id)
+        )
+        leave = _row_to_dict(cur, cur.fetchone())
+
+        target_employee_id = _employee_id_for_leave(cur, leave)
+        if target_employee_id:
+            verb = status.lower()  # "approved" / "declined"
+            cur.execute(
+                """
+                INSERT INTO user_notifications
+                    (employee_id, title, body, type, ref_id, created_at)
+                VALUES (%s, %s, %s, 'leave', %s, NOW())
+                """,
+                (
+                    target_employee_id,
+                    f"Leave request {verb}",
+                    f"Your leave request for {leave['dates']} was {verb}.",
+                    leave["id"],
+                ),
+            )
+
+        conn.commit()
+        return _leave_json(leave)
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
+
 
 
 class ApiController:

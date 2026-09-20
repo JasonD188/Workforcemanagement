@@ -1,0 +1,132 @@
+﻿
+> api_controller.py:161:    employees/quick_add_employees gamit ang pangalan."""
+  api_controller.py:162:    qr_id = (leave.get("qr_id") or "").strip()
+  api_controller.py:163:    if qr_id:
+  api_controller.py:164:        return qr_id
+  api_controller.py:165:
+> api_controller.py:179:        "SELECT employee_id FROM quick_add_employees WHERE name ILIKE %s AND 
+deleted_at IS NULL LIMIT 1",
+  api_controller.py:180:        (name,),
+  api_controller.py:181:    )
+  api_controller.py:182:    row = cur.fetchone()
+  api_controller.py:183:    return row[0] if row else None
+> api_controller.py:297:                "SELECT name, employee_id FROM quick_add_employees WHERE 
+deleted_at IS NULL"
+  api_controller.py:298:            )
+  api_controller.py:299:            for row in cur.fetchall():
+  api_controller.py:300:                qa = _row_to_dict(cur, row)
+  api_controller.py:301:                name = qa.get("name")
+> api_controller.py:335:                "SELECT 1 FROM quick_add_employees WHERE name ILIKE %s LIMIT 1", 
+(name,)
+  api_controller.py:336:            )
+  api_controller.py:337:            if not cur.fetchone():
+  api_controller.py:338:                cur.execute(
+  api_controller.py:339:                    """
+> api_controller.py:340:                    INSERT INTO quick_add_employees (name, employee_id, 
+created_at)
+  api_controller.py:341:                    VALUES (%s, %s, %s)
+  api_controller.py:342:                    """,
+  api_controller.py:343:                    (name, _quick_add_qr_id(name), datetime.utcnow())
+  api_controller.py:344:                )
+> api_controller.py:386:        pero i-mark ang deleted_at at i-log din sa deleted_employees bilang 
+archive."""
+  api_controller.py:387:        conn = get_connection()
+  api_controller.py:388:        try:
+  api_controller.py:389:            cur = conn.cursor()
+  api_controller.py:390:
+> api_controller.py:419:                    INSERT INTO deleted_employees
+  api_controller.py:420:                        (employee_id, name, contact, address, date_hired, 
+qr_path, qr_code_value,
+  api_controller.py:421:                         photo_file_id, photo, photo_data, face_registered, 
+created_at,
+  api_controller.py:422:                         deleted_at, deleted_by)
+  api_controller.py:423:                    VALUES (%(employee_id)s, %(name)s, %(contact)s, %(address)s, 
+%(date_hired)s,
+> api_controller.py:441:                    UPDATE quick_add_employees
+  api_controller.py:442:                    SET deleted_at = %s, deleted_by = %s
+  api_controller.py:443:                    WHERE employee_id = %s AND deleted_at IS NULL
+  api_controller.py:444:                    RETURNING employee_id
+  api_controller.py:445:                    """,
+> api_controller.py:461:        at alisin sa deleted_employees log."""
+  api_controller.py:462:        conn = get_connection()
+  api_controller.py:463:        try:
+  api_controller.py:464:            cur = conn.cursor()
+  api_controller.py:465:
+> api_controller.py:478:                cur.execute("DELETE FROM deleted_employees WHERE employee_id = 
+%s", (employee_id,))
+  api_controller.py:479:                conn.commit()
+  api_controller.py:480:            else:
+  api_controller.py:481:                cur.execute(
+  api_controller.py:482:                    """
+> api_controller.py:483:                    UPDATE quick_add_employees
+  api_controller.py:484:                    SET deleted_at = NULL, deleted_by = NULL
+  api_controller.py:485:                    WHERE employee_id = %s AND deleted_at IS NOT NULL
+  api_controller.py:486:                    RETURNING employee_id
+  api_controller.py:487:                    """,
+> api_controller.py:501:    def get_deleted_employees():
+  api_controller.py:502:        deleted = []
+  api_controller.py:503:        conn = get_connection()
+  api_controller.py:504:        try:
+  api_controller.py:505:            cur = conn.cursor()
+> api_controller.py:510:                FROM deleted_employees
+  api_controller.py:511:                ORDER BY deleted_at DESC
+  api_controller.py:512:                """
+  api_controller.py:513:            )
+  api_controller.py:514:            # FIX: dati ay `for name, employee_id, deleted_at, deleted_by in
+> api_controller.py:530:                FROM quick_add_employees
+  api_controller.py:531:                WHERE deleted_at IS NOT NULL
+  api_controller.py:532:                ORDER BY deleted_at DESC
+  api_controller.py:533:                """
+  api_controller.py:534:            )
+> api_controller.py:561:                       employees, employee_qr_id, replacing_employee, 
+replacing_employee_qr_id,
+  api_controller.py:562:                       lat, lng, created_at
+  api_controller.py:563:                FROM schedules
+  api_controller.py:564:                ORDER BY id ASC
+  api_controller.py:565:                """
+> api_controller.py:583:        employee_qr_id = (data.get("employeeQrId") or "").strip()
+> api_controller.py:584:        replacing_employee = (data.get("replacingEmployee") or "").strip() or 
+None
+> api_controller.py:585:        replacing_employee_qr_id = (data.get("replacingEmployeeQrId") or 
+"").strip() or None
+  api_controller.py:586:        lat = data.get("lat")
+  api_controller.py:587:        lng = data.get("lng")
+  api_controller.py:588:
+  api_controller.py:589:        if not (shift_name and date and time and employee):
+> api_controller.py:599:                     employees, employee_qr_id, replacing_employee, 
+replacing_employee_qr_id,
+  api_controller.py:600:                     lat, lng, created_at)
+  api_controller.py:601:                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+  api_controller.py:602:                RETURNING id, shift_name, date, time, time_in, time_out, 
+location, type,
+> api_controller.py:603:                          employees, employee_qr_id, replacing_employee, 
+replacing_employee_qr_id,
+  api_controller.py:604:                          lat, lng, created_at
+  api_controller.py:605:                """,
+  api_controller.py:606:                (shift_name, date, time, time_in, time_out, location, shift_type,
+> api_controller.py:607:                 [employee], employee_qr_id, replacing_employee, 
+replacing_employee_qr_id,
+  api_controller.py:608:                 lat, lng, datetime.utcnow())
+  api_controller.py:609:            )
+  api_controller.py:610:            shift = _row_to_dict(cur, cur.fetchone())
+  api_controller.py:611:            conn.commit()
+> api_controller.py:616:                       employees, employee_qr_id, replacing_employee, 
+replacing_employee_qr_id,
+  api_controller.py:617:                       lat, lng, created_at
+  api_controller.py:618:                FROM schedules
+  api_controller.py:619:                ORDER BY id ASC
+  api_controller.py:620:                """
+> api_controller.py:645:                          employees, employee_qr_id, replacing_employee, 
+replacing_employee_qr_id,
+  api_controller.py:646:                          lat, lng, created_at
+  api_controller.py:647:                """,
+  api_controller.py:648:                ([employee], schedule_id)
+  api_controller.py:649:            )
+> api_controller.py:659:                       employees, employee_qr_id, replacing_employee, 
+replacing_employee_qr_id,
+  api_controller.py:660:                       lat, lng, created_at
+  api_controller.py:661:                FROM schedules
+  api_controller.py:662:                ORDER BY id ASC
+  api_controller.py:663:                """
+
+
