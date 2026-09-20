@@ -43,7 +43,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "").split(",")
 CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
 
-# Nililinis ang mga space at walang laman na entry
+
 ALLOWED_ADMIN_IPS = [
     ip.strip()
     for ip in os.environ.get("ALLOWED_ADMIN_IPS", "").split(",")
@@ -70,7 +70,7 @@ def restrict_admin_login():
     if request.path == "/loginadmin" and ALLOWED_ADMIN_IPS:
         detected_ip = get_client_ip()
 
-        # ---- DEBUG (tanggalin na pagkatapos ma-verify) ----
+   
         print(f"[DEBUG] CF-Connecting-IP: '{request.headers.get('CF-Connecting-IP')}'")
         print(f"[DEBUG] X-Forwarded-For: '{request.headers.get('X-Forwarded-For')}'")
         print(f"[DEBUG] remote_addr: '{request.remote_addr}'")
